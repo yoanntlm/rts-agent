@@ -4,7 +4,12 @@ import { v } from "convex/values";
 export default defineSchema({
   rooms: defineTable({
     name: v.string(),
-    map: v.object({ width: v.number(), height: v.number() }),
+    map: v.object({
+      width: v.number(),
+      height: v.number(),
+      tiles: v.optional(v.array(v.string())),
+      updatedAt: v.optional(v.number()),
+    }),
     // Per-room persistent sandbox. All agents in this room operate on the
     // same Daytona sandbox so their files persist across runs.
     sandboxId: v.optional(v.string()),

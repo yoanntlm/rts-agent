@@ -81,9 +81,17 @@ Current limitation: only `bash` is routed into Daytona. The built-in `read`, `wr
 
 ## Assets
 
-Promoted terrain tiles in `client/public/assets/generated/` are app assets and should be committed so every collaborator and deployment sees the same map art. The image playground output in `client/public/assets/playground/` stays ignored because it is per-developer iteration scratch.
+Promoted terrain tiles in `client/public/assets/generated/` are app assets and should be committed so every collaborator and deployment sees the same map art.
 
-If you generate new candidate art in `/playground`, use the promote action to copy the selected PNG into `client/public/assets/generated/`, then commit that promoted tile. Do not commit the playground library unless there is a specific reason to preserve an experiment.
+Saved playground entries in `client/public/assets/playground/` are also shared through git. Commit the PNG plus its `.prompt.txt` and `.params.json` sidecars when you want teammates to see the same reference library after pulling. A teammate can browse and promote those saved entries without regenerating them; they still need `OPENAI_API_KEY` locally if they want to create new images.
+
+If you generate new candidate art in `/playground`, either commit it as a shared reference or use the promote action to copy the selected PNG into `client/public/assets/generated/`, then commit that promoted tile.
+
+## Worldbuilder sharing
+
+Room maps are shared through Convex. From a room page, use **Edit map** to open `/r/<room>/editor`, paint the map, then click **Apply to room**. That writes the map tiles to the room document, and every connected user in that room re-renders the same world automatically.
+
+The editor still keeps a local draft while you paint. Local drafts are private until someone clicks **Apply to room**.
 
 ## Docs
 

@@ -9,6 +9,7 @@ export type SavedMap = {
 };
 
 export const STORAGE_KEY = "worldbuilder.map.v1";
+export const BUNDLED_TILEMAP_URL = "/assets/tilemap-48x32.json";
 
 export function isTileKind(v: unknown): v is TileKind {
   return typeof v === "string" && (TILE_KINDS as string[]).includes(v);
@@ -41,6 +42,17 @@ export function saveToStorage(map: SavedMap): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
   } catch {
     // localStorage full or disabled — silently ignore; export still works.
+  }
+}
+
+export async function loadBundledMap(): Promise<SavedMap | null> {
+  try {
+    const response = await fetch(BUNDLED_TILEMAP_URL);
+    if (!response.ok) return null;
+    const parsed = await response.json();
+    return isSavedMap(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
 }
 

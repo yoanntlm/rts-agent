@@ -1,0 +1,9 @@
+{
+  "prompt": "Top-down 1024x1024 pixel-art tile of CALM MARINA BAY WATER seen from\nabove — bright tropical turquoise, more saturated than a forest pond.\nModern tropical Singapore, the water you see from the Helix Bridge or\nEsplanade.\n\nStyle: Stardew Valley pixel-art technique, hand-painted, gentle\ndithering, slightly lower saturation in the deep tones.\n\nPalette: surface turquoise #4ec5c0, deep teal #1a7a82, pale ripple\nhighlight #a8e8e0.\n\nPerspective: strict top-down, 90° from directly above.\n\nComposition: a calm uniform body of water filling the tile, with\nthree or four pale curved RIPPLE ARCS scattered across the surface\nsuggesting gentle current and equatorial sun-glints. No reflections of\nbuildings, no boats, no foam, no shore — this is the open-water\ncenter tile, designed to tile seamlessly across a large bay.\n\nOutput rules: single square tile, full frame, tiles seamlessly, no\nborder, no signature, no text.\n\nEXPLICITLY AVOID: shorelines, sand, boats, jetties, floating debris,\nphotorealistic water, dark dramatic ocean, waves with crests, tropical\nfish.",
+  "size": "1024x1024",
+  "quality": "medium",
+  "n": 1,
+  "background": "opaque",
+  "model": "gpt-image-2",
+  "refCount": 0
+}

@@ -1,0 +1,29 @@
+Top-down 1024x1024 pixel-art tile of MANICURED PARK GRASS WITH A WILD
+RED JUNGLEFOWL ROOSTER in modern tropical Singapore. The kind of feral
+rooster that genuinely roams Bishan and Sin Ming HDB neighborhoods.
+Grass identical to the base park grass tile (use reference image).
+
+Style: Stardew Valley pixel-art technique, hand-painted, gentle
+dithering, visible pixel grain.
+
+Palette: same tropical greens as base grass (deep #2c5b1e, mid #58a13a,
+highlight #9bd25c) plus rooster colors — vivid red comb #c83a3a, dark
+charcoal body feathers #2a2018, orange-tan flight feathers #c8763a,
+small black beak.
+
+Perspective: strict top-down, 90° from directly above. The bird is
+seen from above, so its body is an oblong shape with red comb visible
+on the head, dark wings folded, tail feathers fanning back.
+
+Composition: ONE rooster, placed center-left of the tile, walking — a
+small dot of personality on an otherwise calm grass field. Bird is
+small but legible (~1/8th of the tile). The rooster sits well clear
+of the tile edges. Grass underneath matches base grass exactly.
+
+Output rules: single square tile, full frame, tile seamlessly with
+copies of itself and with base grass, no border, no signature, no
+text.
+
+EXPLICITLY AVOID: large rooster filling the tile, multiple birds,
+chicken-coop styling, cartoonish big-eyed rooster, profile/side view
+(this is top-down), shadows, flowers, paths.

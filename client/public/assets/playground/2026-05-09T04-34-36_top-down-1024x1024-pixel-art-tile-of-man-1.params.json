@@ -1,0 +1,9 @@
+{
+  "prompt": "Top-down 1024x1024 pixel-art tile of MANICURED PARK GRASS in modern\n  tropical Singapore — the kind of short, healthy, well-tended turf\n  underfoot in HDB void-deck parks or on the Padang lawn.\n\n  Style: Stardew Valley pixel-art technique — hand-painted feel, gentle\n  dithering, visible pixel grain but not chunky, no harsh outlines.\n\n  Palette: bright tropical greens — deep #2c5b1e, mid #58a13a, highlight\n  #9bd25c. Even, slightly warm midday light, NOT evening or golden hour.\n\n  Perspective: strict top-down, 90° from directly above. The tile is flat\n  ground seen from a bird's-eye view. No parallax, no foreshortening.\n\n  Composition: a uniform, calm patch of grass filling the entire square,\n  edge to edge. Subtle organic variation — a few slightly-lighter tufts\n  and a few slightly-darker patches — but no flowers, no clover, no\n  creatures, no rocks, no path, no shadows from off-tile objects. This is\n  the BASE tile that will fill ~70% of the map, so it must read quiet.\n\n  Output rules: single square tile filling the full frame, designed to\n  TILE seamlessly when placed beside copies of itself — no half-cut\n  features at the edges, no border, no frame, no drop shadow, no\n  signature, no grid lines, no text.\n\n  EXPLICITLY AVOID: forest moss, dungeon textures, JRPG fantasy meadow,\n  cartoon Pokemon overworld, photorealistic grass, lawn-care marketing\n  imagery, flowers of any kind.",
+  "size": "1024x1024",
+  "quality": "medium",
+  "n": 1,
+  "background": "opaque",
+  "model": "gpt-image-2",
+  "refCount": 0
+}

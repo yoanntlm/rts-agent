@@ -81,7 +81,7 @@ export default function World({
         <WheelZoom onChange={setView} />
         <DragPan onChange={setView} justPannedRef={justPannedRef} />
         <ambientLight intensity={1} />
-        <Tilemap width={mapSize.width} height={mapSize.height} />
+        <Tilemap width={mapSize.width} height={mapSize.height} tiles={mapSize.tiles} />
         {workshopTiles.map((p, i) => (
           <group key={i} position={[p.x + 0.5, p.y + 0.5, 0.055]}>
             <mesh>

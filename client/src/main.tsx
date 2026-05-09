@@ -4,12 +4,15 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import App from "./App";
 import Editor from "./components/editor/Editor";
 import Playground from "./components/playground/Playground";
+import Preview from "./components/preview/Preview";
 import "./index.css";
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 const path = window.location.pathname.replace(/\/$/, "");
-const isEditor = path === "/editor";
 const isPlayground = path === "/playground";
+const isPreview = path === "/preview";
+const editorRoomMatch = path.match(/^\/r\/([a-z0-9]{1,32})\/editor$/i);
+const isEditor = path === "/editor" || Boolean(editorRoomMatch);
 
 // Multi-room routing
 //
@@ -48,8 +51,25 @@ if (isPlayground) {
       <Playground />
     </React.StrictMode>,
   );
+} else if (isPreview) {
+  // Animated-building preview / debug page.
+  root.render(
+    <React.StrictMode>
+      <Preview />
+    </React.StrictMode>,
+  );
+} else if (isEditor && editorRoomMatch && convexUrl) {
+  const roomName = editorRoomMatch[1]!.toLowerCase();
+  const convex = new ConvexReactClient(convexUrl);
+  root.render(
+    <React.StrictMode>
+      <ConvexProvider client={convex}>
+        <Editor roomName={roomName} />
+      </ConvexProvider>
+    </React.StrictMode>,
+  );
 } else if (isEditor) {
-  // Worldbuilder: client-only, no Convex needed.
+  // Local-only worldbuilder fallback.
   root.render(
     <React.StrictMode>
       <Editor />

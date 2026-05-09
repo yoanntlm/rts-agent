@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
 import {
   buildProceduralTiles,
   TILE_KINDS,
@@ -7,6 +10,7 @@ import {
 } from "../../lib/tiles";
 import {
   downloadJson,
+  loadBundledMap,
   loadFromStorage,
   readJsonFile,
   saveToStorage,
@@ -20,7 +24,94 @@ const DEFAULT_H = 32;
 const MIN_DIM = 4;
 const MAX_DIM = 64;
 
-export default function Editor() {
+type Props = {
+  roomName?: string;
+};
+
+type RoomDoc = {
+  _id: Id<"rooms">;
+  map: {
+    width: number;
+    height: number;
+    tiles?: TileKind[];
+    updatedAt?: number;
+  };
+};
+
+export default function Editor({ roomName }: Props) {
+  if (roomName) return <SharedEditor roomName={roomName} />;
+  return <Worldbuilder />;
+}
+
+function SharedEditor({ roomName }: { roomName: string }) {
+  const getOrCreateRoom = useMutation(api.rooms.getOrCreate);
+  const applyMap = useMutation(api.rooms.applyMap);
+  const [roomId, setRoomId] = useState<Id<"rooms"> | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const id = await getOrCreateRoom({ name: roomName });
+        if (!cancelled) setRoomId(id as Id<"rooms">);
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "Failed to load room");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getOrCreateRoom, roomName]);
+
+  const room = useQuery(api.rooms.get, roomId ? { roomId } : "skip") as RoomDoc | null | undefined;
+
+  const handleApply = async (map: SavedMap) => {
+    if (!roomId || applying) return;
+    setApplying(true);
+    setStatus(null);
+    try {
+      await applyMap({
+        roomId,
+        width: map.width,
+        height: map.height,
+        tiles: map.tiles,
+      });
+      setStatus(`Applied ${map.width}x${map.height} to room ${roomName}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to apply map");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Worldbuilder
+      roomName={roomName}
+      roomMap={room?.map}
+      onApplyToRoom={handleApply}
+      applying={applying}
+      externalStatus={status}
+    />
+  );
+}
+
+function Worldbuilder({
+  roomName,
+  roomMap,
+  onApplyToRoom,
+  applying,
+  externalStatus,
+}: {
+  roomName?: string;
+  roomMap?: RoomDoc["map"];
+  onApplyToRoom?: (map: SavedMap) => void | Promise<void>;
+  applying?: boolean;
+  externalStatus?: string | null;
+}) {
   const [width, setWidth] = useState(DEFAULT_W);
   const [height, setHeight] = useState(DEFAULT_H);
   const [tiles, setTiles] = useState<TileKind[]>(() => buildProceduralTiles(DEFAULT_W, DEFAULT_H));
@@ -28,16 +119,51 @@ export default function Editor() {
   const [status, setStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Load saved map on first mount, if one exists.
+  // Load saved map on first mount. Shared editors prefer Convex room state,
+  // then the bundled map, then a local draft.
   useEffect(() => {
-    const saved = loadFromStorage();
-    if (saved) {
+    if (roomName) return;
+    let cancelled = false;
+    (async () => {
+      const saved = loadFromStorage() ?? (await loadBundledMap());
+      if (!saved || cancelled) return;
       setWidth(saved.width);
       setHeight(saved.height);
       setTiles(saved.tiles);
-      setStatus(`Loaded ${saved.width}×${saved.height} from local storage`);
-    }
-  }, []);
+      setStatus(`Loaded ${saved.width}x${saved.height}`);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomName]);
+
+  useEffect(() => {
+    if (!roomName) return;
+    let cancelled = false;
+    (async () => {
+      const shared: SavedMap | null =
+        roomMap?.tiles && roomMap.tiles.length === roomMap.width * roomMap.height
+          ? {
+              version: 1,
+              width: roomMap.width,
+              height: roomMap.height,
+              tiles: roomMap.tiles,
+            }
+          : await loadBundledMap();
+      if (!shared || cancelled) return;
+      setWidth(shared.width);
+      setHeight(shared.height);
+      setTiles(shared.tiles);
+      setStatus(
+        roomMap?.tiles
+          ? `Loaded shared room map${roomMap.updatedAt ? ` from ${new Date(roomMap.updatedAt).toLocaleTimeString()}` : ""}`
+          : "Loaded bundled map; apply it to share with this room",
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomName, roomMap?.updatedAt, roomMap?.width, roomMap?.height]);
 
   // Auto-save on every tile change. Debounced via rAF to coalesce drag spam.
   const pendingSave = useRef<number | null>(null);
@@ -135,7 +261,7 @@ export default function Editor() {
             Worldbuilder
           </h1>
           <a
-            href="/"
+            href={roomName ? `/r/${roomName}` : "/"}
             className="rounded border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:border-stone-500"
           >
             ← Game
@@ -192,6 +318,18 @@ export default function Editor() {
 
         <section className="flex flex-col gap-2">
           <h2 className="text-[10px] uppercase tracking-wider text-stone-400">Save / Load</h2>
+          {onApplyToRoom && (
+            <button
+              type="button"
+              onClick={() => {
+                void onApplyToRoom({ version: 1, width, height, tiles });
+              }}
+              disabled={applying}
+              className="rounded border border-emerald-500/60 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {applying ? "Applying..." : "Apply to room"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onExport}
@@ -214,13 +352,15 @@ export default function Editor() {
             onChange={onImportFile}
           />
           <p className="text-[11px] leading-snug text-stone-500">
-            Auto-saves to your browser. Export to share or bake into the game.
+            {roomName
+              ? "Drafts still auto-save locally. Apply to publish this map for everyone in the room."
+              : "Auto-saves to your browser. Export to share or bake into the game."}
           </p>
         </section>
 
-        {status && (
+        {(externalStatus || status) && (
           <div className="rounded bg-stone-800/80 px-2 py-1.5 text-[11px] text-stone-300">
-            {status}
+            {externalStatus || status}
           </div>
         )}
       </aside>

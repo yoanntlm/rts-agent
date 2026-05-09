@@ -122,7 +122,7 @@ export default function TopBar({
           </details>
         )}
         <a
-          href="/editor"
+          href={`/r/${roomName}/editor`}
           className="rounded border border-line px-2 py-1 text-xs text-ink-muted transition hover:border-line-strong hover:bg-paper-hover"
           title="Open the worldbuilder"
         >

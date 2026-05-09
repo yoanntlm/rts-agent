@@ -5,11 +5,14 @@ import {
   useTileTextures,
   type TileKind,
 } from "../../lib/tiles";
-import { isSavedMap, loadFromStorage, type SavedMap } from "../../lib/savedMap";
+import {
+  BUNDLED_TILEMAP_URL,
+  isSavedMap,
+  type SavedMap,
+} from "../../lib/savedMap";
 
 // Bundled tilemap shipped with the client. Loaded once and shared across all
 // Tilemap instances so every user sees the same world by default.
-const BUNDLED_TILEMAP_URL = "/assets/tilemap-48x32.json";
 let bundledTilemapCache: SavedMap | null = null;
 let bundledTilemapPromise: Promise<SavedMap | null> | null = null;
 
@@ -33,7 +36,7 @@ type Props = {
   width: number;
   height: number;
   // Optional explicit tiles override (row-major, length === width * height).
-  // If omitted, the component reads localStorage; if that's missing or its
+  // If omitted, the component reads the bundled map; if that's missing or its
   // dimensions differ, it falls back to a procedural fill.
   tiles?: TileKind[];
 };
@@ -70,13 +73,11 @@ export default function Tilemap({ width, height, tiles: explicit }: Props) {
     };
   }, []);
 
-  // Fallback chain: explicit prop > localStorage (editor saves) > bundled
-  // /assets/tilemap-48x32.json > procedural. Each step is gated on dimension
-  // match so we never render a misaligned grid.
+  // Fallback chain: explicit prop > bundled /assets/tilemap-48x32.json >
+  // procedural. The game intentionally ignores localStorage drafts so a shared
+  // room never renders a private editor state for one user only.
   const tiles = useMemo<TileKind[]>(() => {
     if (explicit && explicit.length === width * height) return explicit;
-    const saved = loadFromStorage();
-    if (saved && saved.width === width && saved.height === height) return saved.tiles;
     if (bundled && bundled.width === width && bundled.height === height) return bundled.tiles;
     return buildProceduralTiles(width, height);
   }, [width, height, explicit, bundled]);

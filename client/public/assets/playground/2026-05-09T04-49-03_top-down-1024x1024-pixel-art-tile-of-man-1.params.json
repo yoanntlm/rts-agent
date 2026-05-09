@@ -1,0 +1,9 @@
+{
+  "prompt": "Top-down 1024x1024 pixel-art tile of MANICURED PARK GRASS WITH ORCHID\nSPRIGS in modern tropical Singapore. Grass identical to the base park\ngrass tile (use reference image), with three or four tiny pale-purple\nVanda Miss Joaquim orchid sprigs (Singapore's national flower) scattered\nasymmetrically across the tile.\n\nStyle: Stardew Valley pixel-art technique, hand-painted, gentle\ndithering, visible pixel grain.\n\nPalette: same tropical greens as base grass (deep #2c5b1e, mid #58a13a,\nhighlight #9bd25c) plus pale lavender-purple orchid blooms #c8a8e0 with\nslightly darker centers and small green stems.\n\nPerspective: strict top-down, 90° from directly above.\n\nComposition: each orchid sprig is small — about 1/15th of the tile,\nroughly the size of a fingernail at scale — placed asymmetrically and\nWELL CLEAR of the tile edges (no half-orchids on the borders). Spread\nthem out so the tile reads like a 15% scatter variant: orchids visible\nbut not dominating. The underlying grass texture should match the base\ngrass tile exactly.\n\nOutput rules: single square tile, full frame, tiles seamlessly with\ncopies of itself and with the base grass, no border, no signature, no\ngrid lines, no text.\n\nEXPLICITLY AVOID: orchids touching or crossing edges, dense bouquets,\nclusters, large blooms, bright unnatural purple, other flower species,\ncreatures, rocks, paths.",
+  "size": "1024x1024",
+  "quality": "medium",
+  "n": 1,
+  "background": "opaque",
+  "model": "gpt-image-2",
+  "refCount": 0
+}

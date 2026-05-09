@@ -1,0 +1,23 @@
+Top-down 1024x1024 pixel-art tile of RED-CLAY BRICK PAVERS in
+herringbone pattern — modern tropical Singapore, the kind of brick
+floor seen at Tiong Bahru shophouse five-foot-ways and Chinatown
+alleys.
+
+Style: Stardew Valley pixel-art technique, hand-painted, gentle
+dithering, visible pixel grain.
+
+Palette: warm terracotta brick #b04a2a, brick shadow #6f2a16, brick
+highlight #d97a52, narrow dark grout line #4a1a08.
+
+Perspective: strict top-down, 90° from directly above.
+
+Composition: rectangular bricks laid in herringbone pattern (each
+brick at 90° to its neighbor), staggered, NOT aligned in a grid. Each
+brick about 1/8 to 1/10 of the tile. Narrow darker grout. Subtle wear
+and tonal variation brick-to-brick. Designed to tile seamlessly.
+
+Output rules: single square tile, full frame, tiles seamlessly, no
+border, no signature, no text.
+
+EXPLICITLY AVOID: aligned brick grid (use herringbone), modern
+glazed-brick, painted bricks, mossy bricks, weeds, road markings.

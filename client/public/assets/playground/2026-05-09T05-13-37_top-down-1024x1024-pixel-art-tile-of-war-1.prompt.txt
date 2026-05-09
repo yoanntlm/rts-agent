@@ -1,0 +1,22 @@
+Top-down 1024x1024 pixel-art tile of WARM CREAM BEACH SAND — Sentosa
+or East Coast Park, fine grain, gently uneven, modern tropical
+Singapore.
+
+Style: Stardew Valley pixel-art technique, hand-painted, fine pixel
+grain suggesting sand particles, no harsh outlines.
+
+Palette: warm cream sand #e8d8b8, slightly darker grain #c8b08a, very
+faint pebbles #a89070.
+
+Perspective: strict top-down, 90° from directly above.
+
+Composition: an even, calm patch of fine sand filling the entire
+tile, edge to edge. A few scattered tiny darker pebbles or shell
+fragments to break up the texture. No water, no footprints, no
+seaweed.
+
+Output rules: single square tile, full frame, tiles seamlessly, no
+border, no signature, no text.
+
+EXPLICITLY AVOID: water, footprints, beach umbrellas, seaweed, large
+shells dominating the tile, dunes, palm-tree shadows.
