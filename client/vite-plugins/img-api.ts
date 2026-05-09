@@ -399,18 +399,20 @@ export function imgApiPlugin(): Plugin {
     apply: "serve", // dev only
     configureServer(server: ViteDevServer) {
       ensureOpenAIKey();
-      if (!process.env.OPENAI_API_KEY) {
+      const apiKey = process.env.OPENAI_API_KEY;
+      const openai = apiKey ? new OpenAI({ apiKey }) : null;
+      if (!openai) {
         server.config.logger.warn(
-          "[img-api] OPENAI_API_KEY not set — /api/img/* endpoints will return 500.",
+          "[img-api] OPENAI_API_KEY not set — /api/img/* endpoints will return 503.",
         );
       }
-      const openai = new OpenAI();
 
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? "";
         const method = (req.method ?? "GET").toUpperCase();
         try {
           if (url === "/api/img/generate" && method === "POST") {
+            if (!openai) return fail(res, 503, "OPENAI_API_KEY not set");
             return await handleGenerate(req, res, openai);
           }
           if (url === "/api/img/save" && method === "POST") {
@@ -426,6 +428,7 @@ export function imgApiPlugin(): Plugin {
             return await handleTileKeys(req, res);
           }
           if (url === "/api/img/avatar" && method === "POST") {
+            if (!openai) return fail(res, 503, "OPENAI_API_KEY not set");
             return await handleAvatar(req, res, openai);
           }
         } catch (err) {

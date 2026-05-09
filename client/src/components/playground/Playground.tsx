@@ -157,9 +157,11 @@ export default function Playground() {
           setError(`promote failed: ${(j as { error?: string }).error ?? r.status}`);
           return;
         }
-        // Briefly flash a status — kept simple.
+        const okBody = (await r.json()) as { ok?: boolean; dst?: string };
         setError(null);
-        alert(`Promoted to /assets/generated/${tileKey} — reload the world to see it.`);
+        alert(
+          `Promoted to ${okBody.dst ?? "/assets/generated/…"} — hard-reload the game (⌘⇧R) so Three.js reloads textures.`,
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -335,6 +337,13 @@ export default function Playground() {
               Refresh
             </button>
           </div>
+          <p className="mb-3 rounded border border-stone-800 bg-stone-950/80 p-2 text-[11px] leading-relaxed text-stone-500">
+            <span className="font-semibold text-stone-400">Use tiles in the game:</span> (1) Save a result here → file goes to{" "}
+            <code className="text-stone-400">public/assets/playground/</code>. (2) Pick a slot (e.g. Park grass) →{" "}
+            <span className="text-amber-200/90">→ tile</span> copies it to{" "}
+            <code className="text-stone-400">public/assets/generated/</code> — that overwrites the PNG for that tile type. (3) Hard refresh the game tab (
+            <kbd className="rounded bg-stone-800 px-1">⌘⇧R</kbd> / cache-bypass reload) so textures reload.
+          </p>
           {library.length === 0 ? (
             <p className="text-[11px] text-stone-500">
               Nothing saved yet. Generate something and click <em>Save</em>.

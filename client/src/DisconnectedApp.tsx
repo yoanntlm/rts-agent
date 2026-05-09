@@ -4,7 +4,7 @@ import World from "./components/World";
 import Inspector from "./components/Inspector";
 import SetupBanner from "./components/SetupBanner";
 
-const MAP_SIZE = { width: 28, height: 20 };
+const MAP_SIZE = { width: 48, height: 32 };
 
 // Renders the full UI shell without Convex. Spawning is disabled; the world is empty.
 // Useful for previewing the layout before `npx convex dev` has been run.
