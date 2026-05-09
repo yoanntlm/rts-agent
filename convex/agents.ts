@@ -31,6 +31,7 @@ export const spawn = mutation({
     name: v.string(),
     sprite: v.string(),
     color: v.string(),
+    systemPrompt: v.optional(v.string()),
     position: v.object({ x: v.number(), y: v.number() }),
     task: v.string(),
   },

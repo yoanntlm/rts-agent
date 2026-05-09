@@ -4,10 +4,10 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import Layout from "./components/Layout";
 import TopBar from "./components/TopBar";
-import Roster from "./components/Roster";
 import World from "./components/World";
 import Inspector from "./components/Inspector";
-import SpawnModal from "./components/SpawnModal";
+import SpawnButton from "./components/SpawnButton";
+import SpawnDialog from "./components/SpawnDialog";
 import CreateAvatarModal from "./components/CreateAvatarModal";
 import { CHARACTERS, getCharacter } from "./lib/characters";
 import { loadCustomCharacters, saveCustomCharacters } from "./lib/customCharacters";
@@ -15,10 +15,11 @@ import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
 import type { Character } from "./lib/characters";
 
-const ROOM_NAME = "demo";
 const MAP_SIZE = { width: 28, height: 20 };
 
-export default function ConnectedApp() {
+type Props = { roomName: string };
+
+export default function ConnectedApp({ roomName }: Props) {
   const identity = useMemo(() => getOrCreateIdentity(), []);
   const [customCharacters, setCustomCharacters] = useState<Character[]>(() => loadCustomCharacters());
   const characters = useMemo(() => [...CHARACTERS, ...customCharacters], [customCharacters]);
@@ -35,7 +36,7 @@ export default function ConnectedApp() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await getOrCreateRoom({ name: ROOM_NAME });
+        const r = await getOrCreateRoom({ name: roomName });
         if (cancelled) return;
         setRoomId(r as Id<"rooms">);
         const u = await joinRoom({ roomId: r, name: identity.name, color: identity.color });
@@ -94,21 +95,20 @@ export default function ConnectedApp() {
     selectedAgentId ? { agentId: selectedAgentId } : "skip",
   ) as TranscriptRow[] | undefined;
 
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
-  const [spawnCharacterId, setSpawnCharacterId] = useState<string | null>(null);
+  const [spawnOpen, setSpawnOpen] = useState(false);
+  // When the user creates a fresh avatar mid-flow, we pass its id back into the
+  // spawn dialog so it auto-advances to the task step with that avatar picked.
+  const [pendingPickId, setPendingPickId] = useState<string | null>(null);
   const [showAvatarCreator, setShowAvatarCreator] = useState(false);
-  const [spawnPosition, setSpawnPosition] = useState<{ x: number; y: number } | null>(null);
-  const [dragCharacterId, setDragCharacterId] = useState<string | null>(null);
-  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
   const [isSpawning, setIsSpawning] = useState(false);
   const [sendPending, setSendPending] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
   const spawnAgent = useMutation(api.agents.spawn);
   const sendMessage = useMutation(api.transcript.userMessage);
 
-  const handleSpawn = async (task: string, name?: string) => {
-    if (!roomId || !userId || !spawnCharacterId) return;
-    const character = characters.find((c) => c.id === spawnCharacterId) ?? getCharacter(spawnCharacterId);
+  const handleSpawn = async (characterId: string, task: string, name?: string) => {
+    if (!roomId || !userId) return;
+    const character = characters.find((c) => c.id === characterId) ?? getCharacter(characterId);
     if (!character) return;
     setIsSpawning(true);
     setAppError(null);
@@ -121,13 +121,13 @@ export default function ConnectedApp() {
         name: name?.trim() || character.name,
         sprite: character.icon,
         color: character.color,
-        position: spawnPosition ?? pickSpawnPosition(occupied, mapSize),
+        systemPrompt: character.systemPrompt,
+        position: pickSpawnPosition(occupied, mapSize),
         task,
       })) as Id<"agents">;
       setSelectedAgentId(agentId);
-      setSelectedCharacterId(null);
-      setSpawnCharacterId(null);
-      setSpawnPosition(null);
+      setSpawnOpen(false);
+      setPendingPickId(null);
     } catch (err) {
       setAppError(err instanceof Error ? err.message : "Failed to spawn agent.");
     } finally {
@@ -149,7 +149,6 @@ export default function ConnectedApp() {
   };
 
   const selectedAgent = agents?.find((a) => a._id === selectedAgentId) ?? null;
-  const dragCharacter = dragCharacterId ? characters.find((c) => c.id === dragCharacterId) : null;
 
   const addCustomCharacter = (character: Character) => {
     setCustomCharacters((current) => {
@@ -157,94 +156,49 @@ export default function ConnectedApp() {
       saveCustomCharacters(next);
       return next;
     });
-    setSelectedCharacterId(character.id);
     setShowAvatarCreator(false);
+    // Re-open the spawn dialog with the new avatar pre-selected.
+    setPendingPickId(character.id);
+    setSpawnOpen(true);
   };
 
-  useEffect(() => {
-    if (!dragCharacterId) return;
-
-    const onPointerMove = (event: PointerEvent) => {
-      setDragPoint({ x: event.clientX, y: event.clientY });
-    };
-    const onPointerUp = () => {
-      setDragCharacterId(null);
-      setDragPoint(null);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setDragCharacterId(null);
-        setDragPoint(null);
-      }
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [dragCharacterId]);
-
+  // Esc clears the selected agent (only when no spawn dialog is open — that
+  // dialog handles its own Escape).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !spawnCharacterId) {
+      if (event.key === "Escape" && !spawnOpen && !showAvatarCreator) {
         setSelectedAgentId(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [spawnCharacterId]);
+  }, [spawnOpen, showAvatarCreator]);
+
+  const ready = Boolean(roomId && userId);
 
   return (
     <>
       <Layout
         topBar={
           <TopBar
-            roomName={ROOM_NAME}
+            roomName={roomName}
             users={usersInRoom ?? []}
             selfUserId={userId}
             connectionStatus={roomId ? "connected" : "reconnecting"}
             runnerBanner={runnerBanner}
-          />
-        }
-        roster={
-          <Roster
-            characters={characters}
-            selectedCharacterId={selectedCharacterId}
-            onSelect={setSelectedCharacterId}
-            onDescribeTask={() => {
-              if (selectedCharacterId) {
-                setSpawnPosition(null);
-                setSpawnCharacterId(selectedCharacterId);
-              }
-            }}
-            onBeginDrag={(id) => {
-              setSelectedCharacterId(id);
-              setDragCharacterId(id);
-            }}
-            onCreateAvatar={() => setShowAvatarCreator(true)}
-            disabled={!roomId || !userId}
-            runnerBanner={runnerBanner}
+            previewUrls={roomDoc?.previewUrls}
           />
         }
         world={
-          <World
-            agents={(agents ?? []).map(toAgentView)}
-            mapSize={mapSize}
-            onSelectAgent={(id) => setSelectedAgentId(id as Id<"agents"> | null)}
-            selectedAgentId={selectedAgentId}
-            placementColor={dragCharacter?.color ?? null}
-            onPlaceAgent={(position) => {
-              if (!dragCharacterId) return;
-              setSpawnPosition(position);
-              setSpawnCharacterId(dragCharacterId);
-              setDragCharacterId(null);
-              setDragPoint(null);
-            }}
-          />
+          <>
+            <World
+              agents={(agents ?? []).map(toAgentView)}
+              mapSize={mapSize}
+              onSelectAgent={(id) => setSelectedAgentId(id as Id<"agents"> | null)}
+              selectedAgentId={selectedAgentId}
+            />
+            <SpawnButton onClick={() => setSpawnOpen(true)} disabled={!ready} />
+          </>
         }
         inspector={
           <Inspector
@@ -268,35 +222,32 @@ export default function ConnectedApp() {
           ) : undefined
         }
       />
-      {spawnCharacterId && (
-        <SpawnModal
-          character={characters.find((c) => c.id === spawnCharacterId)!}
+      {spawnOpen && (
+        <SpawnDialog
+          characters={characters}
           onClose={() => {
-            setSpawnCharacterId(null);
-            setSpawnPosition(null);
+            setSpawnOpen(false);
+            setPendingPickId(null);
           }}
           onSubmit={handleSpawn}
+          onCreateAvatar={() => {
+            setSpawnOpen(false);
+            setShowAvatarCreator(true);
+          }}
           isSubmitting={isSpawning}
+          initialCharacterId={pendingPickId}
         />
       )}
       {showAvatarCreator && (
         <CreateAvatarModal
-          onClose={() => setShowAvatarCreator(false)}
+          onClose={() => {
+            setShowAvatarCreator(false);
+            // If the user opened the avatar creator from inside the spawn flow,
+            // restore the spawn dialog so they don't lose context.
+            if (!pendingPickId) setSpawnOpen(true);
+          }}
           onCreate={addCustomCharacter}
         />
-      )}
-      {dragCharacter && dragPoint && (
-        <div
-          className="pointer-events-none fixed z-50 flex h-12 w-12 items-center justify-center rounded-lg text-sm font-black text-stone-950 opacity-80 shadow-2xl"
-          style={{
-            left: dragPoint.x + 14,
-            top: dragPoint.y + 14,
-            background: `linear-gradient(180deg, ${dragCharacter.color}, color-mix(in srgb, ${dragCharacter.color} 60%, #0c0a09))`,
-            boxShadow: `0 0 24px ${dragCharacter.color}55`,
-          }}
-        >
-          {dragCharacter.name.slice(0, 2).toUpperCase()}
-        </div>
       )}
     </>
   );
@@ -308,6 +259,7 @@ type AgentRow = {
   _id: Id<"agents">;
   name: string;
   characterId: string;
+  sprite: string;
   color: string;
   position: { x: number; y: number };
   status: "idle" | "working" | "stuck" | "done" | "error";
@@ -336,6 +288,7 @@ function toAgentView(a: AgentRow): AgentView {
     id: a._id,
     name: a.name,
     characterId: a.characterId,
+    sprite: a.sprite,
     color: a.color,
     position: a.position,
     status: a.status,

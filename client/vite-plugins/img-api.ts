@@ -9,6 +9,7 @@
 //   GET  /api/img/library   → list saved entries with their metadata
 //   POST /api/img/promote   → copy a library PNG into public/assets/generated/<key>.png
 //   GET  /api/img/tile-keys → list of valid TileKind names
+//   POST /api/img/avatar    → generate and save a custom character portrait
 
 import type { Plugin, ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -17,10 +18,17 @@ import { config as loadDotenv } from "dotenv";
 import { readdir, readFile, writeFile, mkdir, copyFile, stat } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { existsSync } from "node:fs";
+import {
+  AVATAR_IMAGE_MODEL,
+  AVATAR_IMAGE_QUALITY,
+  AVATAR_IMAGE_SIZE,
+  buildAvatarPrompt,
+} from "../src/lib/avatarPrompt";
 
 const PUBLIC_DIR = resolve(__dirname, "..", "public");
 const PLAYGROUND_DIR = join(PUBLIC_DIR, "assets", "playground");
 const GENERATED_DIR = join(PUBLIC_DIR, "assets", "generated");
+const GENERATED_AVATAR_DIR = join(PUBLIC_DIR, "assets", "chars", "generated");
 
 // Try the local .env first, then fall back to assets-gen/.env so the
 // existing key isn't duplicated across packages.
@@ -314,6 +322,75 @@ async function handleTileKeys(_req: IncomingMessage, res: ServerResponse) {
   return send(res, 200, { keys: [...VALID_TILE_KEYS] });
 }
 
+// ---------- Endpoint: avatar -------------------------------------------------
+
+type AvatarBody = {
+  title: string;
+  color?: string;
+  skillLabel?: string;
+  shortBio?: string;
+  promptFocus?: string;
+};
+
+async function handleAvatar(
+  req: IncomingMessage,
+  res: ServerResponse,
+  openai: OpenAI,
+) {
+  let body: AvatarBody;
+  try {
+    body = await readJsonBody<AvatarBody>(req);
+  } catch {
+    return fail(res, 400, "Invalid JSON body");
+  }
+
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title) return fail(res, 400, "Missing 'title'");
+  if (title.length > 80) return fail(res, 400, "Title must be 80 characters or less");
+
+  const color =
+    typeof body.color === "string" && /^#[0-9a-f]{6}$/i.test(body.color)
+      ? body.color
+      : "#4ECDC4";
+  const prompt = buildAvatarPrompt({
+    title,
+    color,
+    skillLabel: body.skillLabel,
+    shortBio: body.shortBio,
+    promptFocus: body.promptFocus,
+  });
+
+  try {
+    const generated = await openai.images.generate({
+      model: AVATAR_IMAGE_MODEL,
+      prompt,
+      size: AVATAR_IMAGE_SIZE,
+      quality: AVATAR_IMAGE_QUALITY,
+      n: 1,
+    } as Parameters<typeof openai.images.generate>[0]);
+
+    const b64 = generated.data?.[0]?.b64_json;
+    if (!b64) return fail(res, 502, "OpenAI returned no image");
+
+    await mkdir(GENERATED_AVATAR_DIR, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:]/g, "-").replace(/\..+$/, "");
+    const base = `${ts}_${slugify(title)}`;
+    const pngPath = join(GENERATED_AVATAR_DIR, `${base}.png`);
+    const promptPath = join(GENERATED_AVATAR_DIR, `${base}.prompt.txt`);
+    await writeFile(pngPath, Buffer.from(b64, "base64"));
+    await writeFile(promptPath, prompt + "\n");
+
+    return send(res, 200, {
+      url: `/assets/chars/generated/${base}.png`,
+      prompt,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[img/avatar] failed:", msg);
+    return fail(res, 502, msg);
+  }
+}
+
 // ---------- Plugin -----------------------------------------------------------
 
 export function imgApiPlugin(): Plugin {
@@ -347,6 +424,9 @@ export function imgApiPlugin(): Plugin {
           }
           if (url === "/api/img/tile-keys" && method === "GET") {
             return await handleTileKeys(req, res);
+          }
+          if (url === "/api/img/avatar" && method === "POST") {
+            return await handleAvatar(req, res, openai);
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

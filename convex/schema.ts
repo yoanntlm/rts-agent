@@ -9,7 +9,14 @@ export default defineSchema({
     // same Daytona sandbox so their files persist across runs.
     sandboxId: v.optional(v.string()),
     // Public preview URL for the running app inside the sandbox (port 3000).
+    // Kept for backwards-compat with code reading the singular field.
     previewUrl: v.optional(v.string()),
+    // All known preview URLs. We pre-create one per common dev-server port so
+    // the UI can offer the right link regardless of which framework the agents
+    // chose (Express:3000, Vite:5173, http.server/Django:8000, Webpack:8080).
+    previewUrls: v.optional(
+      v.array(v.object({ port: v.number(), url: v.string() })),
+    ),
   }).index("by_name", ["name"]),
 
   users: defineTable({
@@ -26,6 +33,7 @@ export default defineSchema({
     name: v.string(),
     sprite: v.string(),
     color: v.string(),
+    systemPrompt: v.optional(v.string()),
     position: v.object({ x: v.number(), y: v.number() }),
     status: v.union(
       v.literal("idle"),

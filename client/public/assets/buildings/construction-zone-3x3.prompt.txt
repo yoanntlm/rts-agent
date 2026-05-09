@@ -1,0 +1,85 @@
+COZY PIXEL-ART MULTI-TILE BUILDING / WORLD OBJECT — MODERN TROPICAL
+SINGAPORE CITY-BUILDER.
+
+Style technique: Stardew Valley pixel-art technique, hand-painted, gentle
+dithering, visible pixel grain but not chunky, soft outlines on shapes,
+no harsh black strokes.
+
+Subject: a real world object you'd see in modern tropical Singapore —
+NOT medieval, NOT fantasy. Match the same world as our park grass,
+hawker tile, HDB void-deck pavers, Marina Bay water, and the agent NPC
+sprites.
+
+Perspective: top-down 3/4 OBLIQUE view (the Stardew angle). The ground
+is mostly seen from above; vertical structures (cranes, walls, roofs)
+extend slightly upward and forward so they read as having height. NOT
+strict isometric, NOT side-view — this matches our other assets.
+
+Palette: same warm tropical Singapore palette as the rest of the set —
+park green #58a13a, paver beige #c8b89a, asphalt grey #4a4a44, hawker
+cream #f0e8d6, terracotta #b04a2a, marina turquoise #4ec5c0, ochre
+dirt #a8743a. Bright equatorial midday light. NOT evening, NOT
+golden-hour, NOT moody.
+
+Output rules:
+- No frame, no border, no signature, no grid lines, no watermark.
+- No floating UI overlays, no labels, no name tags.
+- No characters/people (the agent sprites are added separately by the
+  game world; people inside buildings or sites would clash).
+- Even, ambient lighting — no dramatic single-direction sun shadow
+  across the whole image.
+
+EXPLICITLY AVOID: medieval, fantasy, samurai, photorealistic, modern
+glass-skyscraper Marina Bay Sands styling (unless explicitly prompted),
+sky / clouds visible (we are top-down, the camera does not see sky),
+gradient backgrounds, decorative borders.
+
+Building content:
+A SINGAPORE CONSTRUCTION SITE / BUILD LOT, 3 tiles wide × 3 tiles
+deep, FILLING THE ENTIRE 1024x1024 FRAME edge to edge. The whole
+patch reads "do not enter — work in progress" — cordoned off from
+the surrounding city by Singapore-style construction hoarding.
+
+Composition, top-down with slight 3/4 oblique:
+- PERIMETER: continuous waist-high BLUE-AND-WHITE corrugated metal
+  hoarding fence runs the full perimeter of the frame (all four
+  sides). The fence has yellow-and-black warning stripes painted
+  along the top edge. This is the iconic hoarding around any new
+  HDB or condo build in Singapore. The fence touches the four edges
+  of the 1024x1024 image — there is NO white margin or city
+  bleeding in from outside.
+- GROUND inside the fence: bare warm OCHRE CONSTRUCTION DIRT
+  (#a8743a base, #6f4a22 ruts, #c89a5a highlights), with subtle
+  tire-track impressions and small gravel patches.
+- ONE small SINGAPORE-STYLE YELLOW TOWER CRANE in the rear-left
+  corner of the site, its tower visible standing upright (3/4
+  oblique), with red-and-white stripes near the top of the tower
+  and a horizontal jib arm reaching across part of the site. Crane
+  occupies roughly 1/4 of the tile in footprint.
+- ONE compact YELLOW-AND-ORANGE CATERPILLAR-STYLE EXCAVATOR (with
+  tracks, articulated arm, and bucket) parked near the center of
+  the site, visible from above with the arm folded.
+- TWO or THREE small MATERIAL PILES scattered asymmetrically:
+  coiled rebar bundles, a stack of bricks, a pile of sandbags, or
+  rolled construction mesh.
+- A pair of ORANGE-AND-WHITE TRAFFIC CONES near a gap in the fence
+  (where a worker entrance would be) on one side.
+- A small portable yellow triangle WARNING SIGN, no readable text.
+- NO completed building, NO finished foundations, NO concrete pour
+  yet — this is the bare lot just after demolition / before vertical
+  construction starts.
+
+Palette: ochre dirt (#a8743a / #6f4a22 / #c89a5a), crane yellow
+#f0b830, safety orange #d97830, hoarding blue #2a78b8, hoarding
+white #e8e0d0, machine dark grey #3a3a36, warning yellow-black
+stripe pattern.
+
+Output rules: the construction site fills the entire frame edge to
+edge. There is NO transparent background and NO white margin
+around the site — the perimeter fence IS the visual edge of the
+image.
+
+EXPLICITLY AVOID: a completed building inside the fence, sky
+visible, surrounding city tiles visible (the fence cuts off the
+view), workers / people / hard-hats (no characters), photorealistic
+machinery, brand logos, readable text on signs.

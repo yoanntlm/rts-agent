@@ -7,6 +7,7 @@ export type AgentView = {
   id: string;
   name: string;
   characterId: string;
+  sprite?: string;
   color: string;
   position: { x: number; y: number };
   status: AgentStatus;

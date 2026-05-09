@@ -44,8 +44,11 @@ export const setSandbox = mutation({
     roomId: v.id("rooms"),
     sandboxId: v.string(),
     previewUrl: v.optional(v.string()),
+    previewUrls: v.optional(
+      v.array(v.object({ port: v.number(), url: v.string() })),
+    ),
   },
-  handler: async (ctx, { roomId, sandboxId, previewUrl }) => {
-    await ctx.db.patch(roomId, { sandboxId, previewUrl });
+  handler: async (ctx, { roomId, sandboxId, previewUrl, previewUrls }) => {
+    await ctx.db.patch(roomId, { sandboxId, previewUrl, previewUrls });
   },
 });

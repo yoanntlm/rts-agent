@@ -1,0 +1,29 @@
+# /etc/systemd/system/citybuilder-runner.service on the VPS
+#
+# After install:
+#   systemctl daemon-reload
+#   systemctl enable --now citybuilder-runner
+# View logs:
+#   journalctl -u citybuilder-runner -f
+
+[Unit]
+Description=rts-agent runner (pi + Daytona orchestrator)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rts-agent
+EnvironmentFile=/opt/rts-agent/agent-runner/.env
+# pnpm is installed via corepack — adjust path if you used a different installer
+ExecStart=/usr/bin/pnpm --filter @rts-agent/agent-runner start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Reasonable per-process limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

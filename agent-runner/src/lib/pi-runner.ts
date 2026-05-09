@@ -38,7 +38,7 @@ type AgentDoc = {
   name: string;
   task: string;
   characterId: string;
-  roomId: Id<"rooms">;
+  systemPrompt?: string;
   position: { x: number; y: number };
 };
 
@@ -78,11 +78,15 @@ const roomSandboxCache = new Map<string, Sandbox>();
 
 export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<void> {
   let walkTimer: ReturnType<typeof setInterval> | null = null;
-  const character = getCharacter(agent.characterId);
-  if (!character) {
-    await failAgent(client, agent._id, `Unknown character: ${agent.characterId}`);
-    return;
-  }
+  const character =
+    getCharacter(agent.characterId) ??
+    ({
+      id: agent.characterId,
+      name: agent.name,
+      systemPrompt:
+        agent.systemPrompt ??
+        `You are ${agent.name}, a custom software teammate. Read the existing project context first, work in focused changes, and explain important tradeoffs clearly.`,
+    } satisfies { id: string; name: string; systemPrompt: string });
 
   const cwd = mkdtempSync(join(tmpdir(), `pi-agent-${agent._id}-`));
   let sandbox: Sandbox | null = null;
@@ -269,18 +273,28 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
         case "tool_execution_start": {
           toolCount++;
           const toolName = (e.toolName as string | undefined) ?? "tool";
+          // pi exposes the tool's input under one of these keys depending on
+          // version; grab whichever exists.
+          const input =
+            (e.toolInput as Record<string, unknown> | undefined) ??
+            (e.params as Record<string, unknown> | undefined) ??
+            (e.args as Record<string, unknown> | undefined) ??
+            (e.toolArgs as Record<string, unknown> | undefined) ??
+            {};
+          const detail = formatToolDetail(toolName, input);
+          const text = detail ? `🔧 ${toolName} · ${detail}` : `🔧 ${toolName}`;
           safeMutation(() =>
             client.mutation(api.agents.update, {
               agentId: agent._id,
               progress: Math.min(toolCount / PROGRESS_TARGET_TOOL_CALLS, 0.95),
-              lastMessage: `🔧 ${toolName}`,
+              lastMessage: text.slice(0, 200),
             }),
           );
           safeMutation(() =>
             client.mutation(api.transcript.append, {
               agentId: agent._id,
               role: "system",
-              text: `🔧 ${toolName}`,
+              text,
             }),
           );
           break;
@@ -424,6 +438,27 @@ You have **bash, write, read, edit, ls, find, grep** — all running on a local 
       clearInterval(userTurnPoll);
       if (walkTimer) clearInterval(walkTimer);
       await flushText();
+
+      // Capture this agent's diff and post it to the transcript so the user
+      // can see exactly what changed. Done before dispose so the sandbox is
+      // still attached.
+      if (sandbox) {
+        try {
+          const diff = await captureAgentDiff(sandbox, agent.name);
+          if (diff) {
+            await safeMutation(() =>
+              client.mutation(api.transcript.append, {
+                agentId: agent._id,
+                role: "system",
+                text: `📁 Changes by ${agent.name}\n\n\`\`\`diff\n${diff}\n\`\`\``,
+              }),
+            );
+          }
+        } catch (err) {
+          console.error(`[runner] ${agent.name}: diff capture failed:`, err);
+        }
+      }
+
       try {
         await session.dispose();
       } catch {}
@@ -477,17 +512,55 @@ async function getOrCreateRoomSandbox(
   console.log(`[runner] ${agentName}: creating new sandbox for room ${roomId}`);
   const sandbox = await daytonaClient.create({ language: "python" });
   const sandboxId = (sandbox as unknown as { id?: string }).id;
-  let previewUrl: string | undefined;
+
+  // Initialize a git repo at the project root so we can show per-agent diffs.
+  // Failure here is non-fatal — diffs become a no-op if git isn't available.
   try {
-    const link = await sandbox.getPreviewLink(3000);
-    previewUrl = link.url;
-    console.log(`[runner] ${agentName}: preview URL ready at ${previewUrl}`);
+    const proc = (sandbox as unknown as {
+      process: { executeCommand: (cmd: string) => Promise<unknown> };
+    }).process;
+    await proc.executeCommand(
+      `mkdir -p /home/daytona/project && cd /home/daytona/project && \
+       (git init -q 2>/dev/null || true) && \
+       git config user.email "agent@rts-agent.local" && \
+       git config user.name "agent" && \
+       (git add -A 2>/dev/null || true) && \
+       (git commit -q -m "init" --allow-empty 2>/dev/null || true)`,
+    );
+    console.log(`[runner] ${agentName}: git initialized in /home/daytona/project`);
   } catch (err) {
-    console.error("[runner] getPreviewLink failed:", err);
+    console.error("[runner] git init failed (non-fatal):", err);
   }
+
+  // Pre-create preview URLs for the common dev-server ports so the UI can
+  // surface the right link no matter which framework the agents pick.
+  // Express:3000 · Vite:5173 · http.server/Django/Flask:8000 · Webpack/CRA:8080
+  const PREVIEW_PORTS = [3000, 5173, 8000, 8080];
+  const previewUrls: { port: number; url: string }[] = [];
+  await Promise.all(
+    PREVIEW_PORTS.map(async (port) => {
+      try {
+        const link = await sandbox.getPreviewLink(port);
+        previewUrls.push({ port, url: link.url });
+      } catch (err) {
+        console.error(`[runner] getPreviewLink(${port}) failed:`, err);
+      }
+    }),
+  );
+  previewUrls.sort((a, b) => a.port - b.port);
+  const previewUrl = previewUrls.find((p) => p.port === 3000)?.url;
+  console.log(
+    `[runner] ${agentName}: preview URLs ready: ${previewUrls.map((p) => `${p.port}=${p.url}`).join(", ")}`,
+  );
+
   if (sandboxId) {
     await safeMutation(() =>
-      client.mutation(api.rooms.setSandbox, { roomId, sandboxId, previewUrl }),
+      client.mutation(api.rooms.setSandbox, {
+        roomId,
+        sandboxId,
+        previewUrl,
+        previewUrls,
+      }),
     );
   }
   roomSandboxCache.set(roomId, sandbox);
@@ -568,6 +641,88 @@ async function safeMutation(fn: () => Promise<unknown>): Promise<void> {
     await fn();
   } catch (err) {
     console.error("[runner] mutation error:", err);
+  }
+}
+
+// Stages all changes in /home/daytona/project, captures the diff against the
+// previous commit, then commits the agent's work as its own commit. Result is
+// posted to the transcript so the user can see exactly what changed.
+async function captureAgentDiff(
+  sandbox: Sandbox,
+  agentName: string,
+): Promise<string | null> {
+  const proc = (sandbox as unknown as {
+    process: {
+      executeCommand: (cmd: string) => Promise<{
+        result?: string;
+        artifacts?: { stdout?: string };
+      }>;
+    };
+  }).process;
+
+  // Single shell call: stage, capture stat + diff (limited), then commit so
+  // the next agent starts from a clean base.
+  const safeName = agentName.replace(/[^A-Za-z0-9 ._-]/g, "");
+  const cmd = [
+    "cd /home/daytona/project 2>/dev/null || exit 0",
+    "git add -A 2>/dev/null || true",
+    'STAT=$(git diff --cached --stat HEAD 2>/dev/null | tail -n +1)',
+    `DIFF=$(git diff --cached HEAD --no-color -- '*.js' '*.ts' '*.tsx' '*.jsx' '*.html' '*.css' '*.scss' '*.py' '*.md' '*.json' '*.sh' '*.yml' '*.yaml' '*.toml' 2>/dev/null | head -c 6000)`,
+    `git commit -q -m "agent: ${safeName}" 2>/dev/null || true`,
+    'if [ -n "$STAT" ]; then printf "%s\\n\\n%s" "$STAT" "$DIFF"; fi',
+  ].join(" && ");
+
+  const res = await proc.executeCommand(cmd);
+  const out = (res.artifacts?.stdout ?? res.result ?? "").trim();
+  return out || null;
+}
+
+// Renders a tool's input as a short, human-readable string for the transcript.
+// Goal: a glance tells you "the agent ran `node server.js`" or "wrote app.py".
+function formatToolDetail(
+  toolName: string,
+  input: Record<string, unknown>,
+): string {
+  const oneLine = (s: unknown, max: number) =>
+    typeof s === "string"
+      ? s.replace(/\s+/g, " ").trim().slice(0, max) +
+        (typeof s === "string" && s.length > max ? "…" : "")
+      : "";
+  switch (toolName) {
+    case "bash": {
+      const cmd = oneLine(input.command, 200);
+      return cmd ? `\`${cmd}\`` : "";
+    }
+    case "write": {
+      const path = oneLine(input.filePath ?? input.path, 80);
+      const bytes =
+        typeof input.content === "string" ? `${input.content.length}c` : "";
+      return path ? `📝 ${path}${bytes ? ` (${bytes})` : ""}` : "";
+    }
+    case "edit": {
+      const path = oneLine(input.filePath ?? input.path, 80);
+      return path ? `✏️ ${path}` : "";
+    }
+    case "read": {
+      const path = oneLine(input.filePath ?? input.path, 80);
+      return path ? `📖 ${path}` : "";
+    }
+    case "ls": {
+      const path = oneLine(input.path, 80);
+      return path ? `📂 ${path}` : "";
+    }
+    case "grep": {
+      const pattern = oneLine(input.pattern, 80);
+      const where = oneLine(input.path, 40);
+      return pattern ? `🔎 /${pattern}/${where ? ` in ${where}` : ""}` : "";
+    }
+    case "find": {
+      const pattern = oneLine(input.pattern ?? input.glob, 80);
+      const where = oneLine(input.path, 40);
+      return pattern ? `🔎 ${pattern}${where ? ` in ${where}` : ""}` : "";
+    }
+    default:
+      return "";
   }
 }
 

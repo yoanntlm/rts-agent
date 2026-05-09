@@ -9,7 +9,11 @@
     "dev:runner": "pnpm --filter ./agent-runner dev",
     "convex:dev": "convex dev",
     "build": "pnpm --filter ./client build",
-    "assets:gen": "pnpm --filter ./assets-gen start"
+    "assets:gen": "pnpm --filter ./assets-gen start",
+    "assets:avatars": "pnpm --filter ./assets-gen avatars",
+    "assets:trim-avatars": "pnpm --filter ./assets-gen trim-avatars",
+    "assets:buildings": "pnpm --filter ./assets-gen buildings",
+    "assets:animate-building": "pnpm --filter ./assets-gen animate-building"
   },
   "devDependencies": {
     "convex": "^1.38.0",

@@ -15,8 +15,8 @@ import {
 import EditorCanvas from "./EditorCanvas";
 import TilePalette from "./TilePalette";
 
-const DEFAULT_W = 16;
-const DEFAULT_H = 16;
+const DEFAULT_W = 48;
+const DEFAULT_H = 32;
 const MIN_DIM = 4;
 const MAX_DIM = 64;
 

@@ -6,6 +6,7 @@ import {
   type CustomCharacterInput,
 } from "../lib/customCharacters";
 import type { Character } from "../lib/characters";
+import CharacterAvatar from "./CharacterAvatar";
 
 type Props = {
   onClose: () => void;
@@ -16,6 +17,9 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [skillId, setSkillId] = useState(SKILL_PRESETS[0]!.id);
   const [color, setColor] = useState(AVATAR_COLORS[0]!);
+  const [generatedIcon, setGeneratedIcon] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const selectedSkill = useMemo(
@@ -23,6 +27,14 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
     [skillId],
   );
   const previewName = name.trim() || selectedSkill.label;
+  const previewCharacter: Character = {
+    id: "avatar-preview",
+    name: previewName,
+    icon: generatedIcon ?? "",
+    color,
+    shortBio: selectedSkill.shortBio,
+    systemPrompt: "",
+  };
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -36,8 +48,42 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const generateAvatar = async () => {
+    const title = name.trim();
+    if (!title || isGenerating) return;
+
+    setIsGenerating(true);
+    setGenerateError(null);
+    setGeneratedIcon(null);
+    try {
+      const response = await fetch("/api/img/avatar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          color,
+          skillLabel: selectedSkill.label,
+          shortBio: selectedSkill.shortBio,
+          promptFocus: selectedSkill.promptFocus,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+      if (!response.ok || body?.error || !body?.url) {
+        throw new Error(body?.error ?? `HTTP ${response.status}`);
+      }
+      setGeneratedIcon(`${body.url}?v=${Date.now()}`);
+    } catch (error) {
+      setGenerateError(error instanceof Error ? error.message : "Avatar generation failed");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const submit = () => {
-    const input: CustomCharacterInput = { name, skillId, color };
+    if (!name.trim() || !generatedIcon) return;
+    const input: CustomCharacterInput = { name, skillId, color, icon: generatedIcon };
     onCreate(createCustomCharacter(input));
   };
 
@@ -60,15 +106,12 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
         />
 
         <div className="mb-4 flex items-start gap-3">
-          <div
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-base font-black text-stone-950"
-            style={{
-              background: `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 58%, #0c0a09))`,
-              boxShadow: `0 0 22px ${color}55`,
-            }}
-          >
-            {previewName.slice(0, 2).toUpperCase()}
-          </div>
+          <CharacterAvatar
+            character={previewCharacter}
+            size="md"
+            className="h-14 w-14 rounded-xl text-base"
+            style={{ boxShadow: `0 0 22px ${color}55, inset 0 0 0 1.5px ${color}aa` }}
+          />
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">
               Avatar creator
@@ -76,22 +119,23 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
             <h2 id="create-avatar-title" className="mt-1 text-lg font-semibold text-stone-100">
               Create a team specialist
             </h2>
-            <p className="mt-1 text-xs leading-relaxed text-stone-400">
-              Pick a role and visual identity. This becomes a reusable avatar in your roster.
-            </p>
           </div>
         </div>
 
         <label className="mb-4 block">
           <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-stone-400">
-            Avatar name
+            Title
           </span>
           <input
             ref={nameRef}
             type="text"
             value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={selectedSkill.label}
+            onChange={(event) => {
+              setName(event.target.value);
+              setGeneratedIcon(null);
+              setGenerateError(null);
+            }}
+            placeholder="Database Gardener"
             className="w-full rounded-md border border-stone-800 bg-stone-950/80 p-2 text-sm text-stone-100 placeholder:text-stone-600 focus:outline-none"
             style={{ caretColor: color }}
           />
@@ -108,7 +152,11 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
                 <button
                   key={skill.id}
                   type="button"
-                  onClick={() => setSkillId(skill.id)}
+                  onClick={() => {
+                    setSkillId(skill.id);
+                    setGeneratedIcon(null);
+                    setGenerateError(null);
+                  }}
                   className="rounded-lg border p-2 text-left transition duration-200 hover:-translate-y-0.5"
                   style={{
                     borderColor: selected ? `${color}66` : "rgba(68,64,60,0.9)",
@@ -136,7 +184,11 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
                 key={swatch}
                 type="button"
                 aria-label={`Use ${swatch}`}
-                onClick={() => setColor(swatch)}
+                onClick={() => {
+                  setColor(swatch);
+                  setGeneratedIcon(null);
+                  setGenerateError(null);
+                }}
                 className="h-8 w-8 rounded-lg border border-stone-900 transition hover:scale-105"
                 style={{
                   backgroundColor: swatch,
@@ -147,13 +199,34 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
           </div>
         </div>
 
-        <div className="mb-5 rounded-lg border border-stone-800 bg-stone-950/60 p-3">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-            Prompt preview
+        <div className="mb-5 grid grid-cols-[96px_1fr] gap-3 rounded-lg border border-stone-800 bg-stone-950/60 p-3">
+          <CharacterAvatar
+            character={previewCharacter}
+            size="lg"
+            className="rounded-lg"
+            style={{ boxShadow: `inset 0 0 0 1.5px ${color}aa` }}
+          />
+          <div className="flex min-w-0 flex-col justify-between gap-3">
+            <div>
+              <div className="truncate text-sm font-semibold text-stone-100">{previewName}</div>
+              <div className="mt-1 text-xs leading-relaxed text-stone-400">
+                {selectedSkill.shortBio}
+              </div>
+              {generateError && (
+                <div className="mt-2 rounded-md border border-red-700/40 bg-red-950/40 px-2 py-1.5 text-xs text-red-100">
+                  {generateError}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={generateAvatar}
+              disabled={!name.trim() || isGenerating}
+              className="w-fit rounded-md border border-cyan-200/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:border-cyan-200/35 hover:bg-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isGenerating ? "Generating..." : generatedIcon ? "Regenerate avatar" : "Generate avatar"}
+            </button>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-stone-300">
-            {previewName} specializes in {selectedSkill.promptFocus}.
-          </p>
         </div>
 
         <div className="flex justify-end gap-2">
@@ -167,7 +240,8 @@ export default function CreateAvatarModal({ onClose, onCreate }: Props) {
           <button
             type="button"
             onClick={submit}
-            className="rounded-md px-3 py-1.5 text-sm font-semibold text-stone-950 transition hover:brightness-110"
+            disabled={!name.trim() || !generatedIcon || isGenerating}
+            className="rounded-md px-3 py-1.5 text-sm font-semibold text-stone-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             style={{ backgroundColor: color }}
           >
             Add to roster

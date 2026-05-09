@@ -1,0 +1,53 @@
+COZY PIXEL-ART CHARACTER SPRITE — STARDEW VALLEY STYLE NPC.
+
+Style technique: Stardew Valley pixel-art NPC sprite — hand-painted feel,
+gentle dithering, visible pixel grain but not chunky, soft outlines on
+the body silhouette, no harsh black strokes.
+
+Subject: an in-game NPC standing on its legs, FULL-BODY visible from
+HEAD TO TOE. Modern tropical Singapore civic worker, NOT medieval, NOT
+fantasy, NOT samurai/anime, NOT pirate. Same world as our park grass,
+hawker tile, HDB void-deck pavers — bright equatorial midday light.
+
+Perspective: top-down 3/4 OBLIQUE view (the classic Stardew Valley NPC
+angle). Camera looks down and slightly forward at the character — face,
+torso, and legs are ALL VISIBLE. NOT a strict top-down view of just the
+head. NOT a fully side-on profile.
+
+Composition: ONE character, centered horizontally, facing the viewer
+(facing forward / "south"). Character occupies the central column of
+the frame, head near the top, feet near the bottom. The character
+fills roughly 80–90% of the frame height — fitting comfortably within
+a 1×1 tile cell when placed in the game world. Slightly chibi-ish
+proportions (head is roughly 1/4 of the total body height) but
+readable as an adult professional, not a child.
+
+Output rules:
+- Background must be a SOLID FLAT PURE WHITE (#ffffff) filling the
+  entire frame around the character — no gradient, no texture, no
+  scenery, no environmental hints. The character is a sticker on a
+  blank white card. We post-process / chroma-key this background out
+  later when we need to drop the character onto game tiles.
+- No drop shadow on the ground, no platform, no podium under the feet.
+- No frame, no border, no signature, no grid, no name tag, no speech
+  bubble.
+- Single character only — no companions, no pet.
+- Two arms and two legs visible, both feet on the ground.
+
+Palette mood: warm tropical Singapore midday — saturated but not
+neon. Skin tones are natural East/Southeast-Asian-Singapore-typical
+(any of the spectrum). Match the SAME pixel-grain saturation as our
+existing tile set.
+
+EXPLICITLY AVOID: medieval armor, fantasy robes, knight, wizard,
+samurai, pirate, ninja, anime giant eyes, photorealistic styling,
+generic stock illustration, side-profile, strict top-down (no
+"head-only seen from above"), gradient or scenery or photo
+backgrounds (must be FLAT WHITE), decorative borders, ground shadows,
+props larger than the character.
+
+Character: Backend Specialist (backend). This NPC is the BACKEND SPECIALIST — a Singapore systems engineer
+who builds APIs and data models. Wears a SUNNY GOLD POLO SHIRT
+(primary color #FFD166) with a small TOOL BELT around the waist,
+dark cargo trousers, sturdy work boots. Holds a SMALL TOOLBOX or
+compact hammer in one hand. Practical, ready-to-build energy.

@@ -27,8 +27,28 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 
-# generated assets (regenerate via /assets-gen)
-client/public/assets/generated/
-
-# playground saves (per-developer iteration scratch — not shared)
+# promoted terrain tile PNGs are shared app assets; keep other generations local
+client/public/assets/generated/*
+!client/public/assets/generated/
+!client/public/assets/generated/park-grass.png
+!client/public/assets/generated/park-grass-orchid.png
+!client/public/assets/generated/park-grass-hibiscus.png
+!client/public/assets/generated/park-grass-rooster.png
+!client/public/assets/generated/park-grass-mynah.png
+!client/public/assets/generated/park-grass-mango.png
+!client/public/assets/generated/tropical-foliage.png
+!client/public/assets/generated/lalang-grass.png
+!client/public/assets/generated/paver-beige.png
+!client/public/assets/generated/paver-red-brick.png
+!client/public/assets/generated/void-deck-tile.png
+!client/public/assets/generated/road-asphalt.png
+!client/public/assets/generated/road-center-line.png
+!client/public/assets/generated/road-zebra.png
+!client/public/assets/generated/road-bus-lane.png
+!client/public/assets/generated/hawker-tile.png
+!client/public/assets/generated/kopitiam-tile.png
+!client/public/assets/generated/marina-water.png
+!client/public/assets/generated/monsoon-drain.png
+client/public/assets/chars/generated/
+client/public/assets/chars/raw/
 client/public/assets/playground/

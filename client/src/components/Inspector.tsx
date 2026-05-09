@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentView } from "../lib/types";
+import { getCharacter, type Character } from "../lib/characters";
+import CharacterAvatar from "./CharacterAvatar";
 
 type TranscriptEntry = {
   id: string;
@@ -25,11 +27,11 @@ const STATUS_LABEL: Record<AgentView["status"], string> = {
 };
 
 const STATUS_COLOR: Record<AgentView["status"], string> = {
-  idle: "#a8a29e",
-  working: "#34d399",
-  stuck: "#facc15",
-  done: "#60a5fa",
-  error: "#f87171",
+  idle: "#6a5e4a",
+  working: "#15803d",
+  stuck: "#a16207",
+  done: "#1d4ed8",
+  error: "#b91c1c",
 };
 
 const ROLE_LABEL: Record<TranscriptEntry["role"], string> = {
@@ -37,6 +39,22 @@ const ROLE_LABEL: Record<TranscriptEntry["role"], string> = {
   user: "You",
   system: "System",
 };
+
+// Map an agent back to a Character for portrait rendering. Falls through to a
+// synthetic Character (no icon → initials fallback) for custom avatars that
+// aren't in the static preset list.
+function agentToCharacter(agent: AgentView): Character {
+  const preset = getCharacter(agent.characterId);
+  if (preset) return preset;
+  return {
+    id: agent.characterId,
+    name: agent.name,
+    icon: agent.sprite ?? "",
+    color: agent.color,
+    shortBio: "",
+    systemPrompt: "",
+  };
+}
 
 export default function Inspector({
   agent,
@@ -62,15 +80,12 @@ export default function Inspector({
 
   if (!agent) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-stone-500">
-        <div className="rounded-xl border border-purple-200/10 bg-stone-950/60 p-5 shadow-2xl shadow-black/30">
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-purple-200/70">
+      <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-ink-soft">
+        <div className="rounded-xl border border-line bg-paper p-5 shadow-lg shadow-amber-900/10">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-purple-700">
             Inspector
           </div>
-          <div className="mt-2 text-base font-semibold text-stone-300">No agent selected</div>
-          <p className="mt-2 max-w-[24ch] text-xs">
-            Spawn an agent from the roster, then click its marker in the world to inspect live progress.
-          </p>
+          <div className="mt-2 text-base font-semibold text-ink-muted">No agent selected</div>
         </div>
       </div>
     );
@@ -86,19 +101,15 @@ export default function Inspector({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b border-purple-200/10 bg-stone-950/30 p-3">
+      <header className="border-b border-line bg-paper/60 p-3">
         <div className="flex items-start gap-3">
-          <div
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-black text-stone-950"
-            style={{
-              background: `linear-gradient(180deg, ${agent.color}, color-mix(in srgb, ${agent.color} 58%, #0c0a09))`,
-              boxShadow: `0 0 18px ${agent.color}44`,
-            }}
-          >
-            {agent.name.slice(0, 2).toUpperCase()}
-          </div>
+          <CharacterAvatar
+            character={agentToCharacter(agent)}
+            size="md"
+            style={{ boxShadow: `0 0 14px ${agent.color}33, inset 0 0 0 1.5px ${agent.color}` }}
+          />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-stone-100">{agent.name}</div>
+            <div className="truncate text-sm font-semibold text-ink">{agent.name}</div>
             <div className="mt-1 flex items-center gap-2 text-xs">
               <span style={{ color: STATUS_COLOR[agent.status] }}>
                 ●{" "}
@@ -109,7 +120,7 @@ export default function Inspector({
                     : STATUS_LABEL[agent.status]}
               </span>
               {typeof agent.progress === "number" && (
-                <span className="text-stone-500">
+                <span className="text-ink-soft">
                   · {Math.round(agent.progress * 100)}%
                 </span>
               )}
@@ -117,34 +128,34 @@ export default function Inspector({
           </div>
         </div>
         {typeof agent.progress === "number" && (
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-800">
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full transition-[width] duration-300"
               style={{
                 width: `${Math.round(agent.progress * 100)}%`,
                 backgroundColor: agent.color,
-                boxShadow: `0 0 12px ${agent.color}66`,
+                boxShadow: `0 0 8px ${agent.color}55`,
               }}
             />
           </div>
         )}
-        <div className="mt-2 line-clamp-3 text-xs text-stone-400">
-          <span className="text-stone-500">Task: </span>
+        <div className="mt-2 line-clamp-3 text-xs text-ink-muted">
+          <span className="text-ink-soft">Task: </span>
           {agent.task}
         </div>
         {queuedForRunner && (
-          <div className="mt-2 rounded-md border border-amber-200/10 bg-amber-950/20 px-2 py-1.5 text-xs text-amber-100/80">
+          <div className="mt-2 rounded-md border border-amber-700/30 bg-amber-100 px-2 py-1.5 text-xs text-amber-900">
             This agent has been queued in Convex and is waiting for the runner to claim it.
           </div>
         )}
         {startingUp && (
-          <div className="mt-2 rounded-md border border-emerald-200/10 bg-emerald-950/15 px-2 py-1.5 text-xs text-emerald-100/85">
+          <div className="mt-2 rounded-md border border-emerald-700/30 bg-emerald-100 px-2 py-1.5 text-xs text-emerald-900">
             Runner claimed this agent — spinning up the session. Watch the map: they walk to the nearest workshop ring.
           </div>
         )}
         {agent.lastMessage ? (
-          <div className="mt-2 rounded-md border border-stone-800 bg-stone-950/55 px-2 py-1.5 font-mono text-[10px] leading-snug text-stone-300">
-            <span className="text-stone-500">Live: </span>
+          <div className="mt-2 rounded-md border border-line bg-paper px-2 py-1.5 font-mono text-[10px] leading-snug text-ink-muted">
+            <span className="text-ink-soft">Live: </span>
             <span className="break-words">{agent.lastMessage}</span>
           </div>
         ) : null}
@@ -152,7 +163,7 @@ export default function Inspector({
 
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto p-3">
         {transcript.length === 0 && (
-          <div className="rounded-lg border border-stone-800 bg-stone-950/60 p-3 text-xs text-stone-500">
+          <div className="rounded-lg border border-line bg-paper/70 p-3 text-xs text-ink-soft">
             {startingUp || queuedForRunner
               ? "Transcript will appear when the runner connects and streams activity."
               : "No transcript yet. Activity from the runner shows up here in real time."}
@@ -164,22 +175,22 @@ export default function Inspector({
             className={[
               "rounded-lg border px-2.5 py-2 text-xs leading-relaxed",
               t.role === "agent"
-                ? "border-teal-200/10 bg-teal-950/20 text-teal-50"
+                ? "border-teal-700/25 bg-teal-50 text-teal-900"
                 : t.role === "user"
-                  ? "border-blue-200/10 bg-blue-950/25 text-blue-50"
-                  : "border-stone-800 bg-stone-950/50 italic text-stone-500",
+                  ? "border-blue-700/25 bg-blue-50 text-blue-900"
+                  : "border-line bg-paper/60 italic text-ink-soft",
             ].join(" ")}
           >
-            <div className="mb-1 flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-stone-500">
+            <div className="mb-1 flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-ink-soft">
               <span>{ROLE_LABEL[t.role]}</span>
-              {t.userId && <span className="font-mono normal-case opacity-60">{t.userId.slice(-6)}</span>}
+              {t.userId && <span className="font-mono normal-case opacity-70">{t.userId.slice(-6)}</span>}
             </div>
             <div className="whitespace-pre-wrap break-words">{t.text}</div>
           </div>
         ))}
       </div>
 
-      <footer className="border-t border-purple-200/10 bg-stone-950/30 p-2">
+      <footer className="border-t border-line bg-paper/60 p-2">
         <textarea
           ref={inputRef}
           value={draft}
@@ -195,10 +206,10 @@ export default function Inspector({
             disabled ? "Agent runner offline..." : "Type a hint... (Enter to send)"
           }
           rows={2}
-          className="w-full resize-none rounded-md border border-stone-800 bg-stone-950 p-2 text-xs text-stone-100 placeholder:text-stone-600 focus:outline-none disabled:opacity-50"
+          className="w-full resize-none rounded-md border border-line bg-paper p-2 text-xs text-ink placeholder:text-ink-soft focus:border-line-strong focus:outline-none disabled:opacity-50"
           style={{ caretColor: agent.color }}
         />
-        <div className="mt-1 flex items-center justify-between text-[10px] text-stone-600">
+        <div className="mt-1 flex items-center justify-between text-[10px] text-ink-soft">
           <span>Shift + Enter for newline</span>
           {sendPending && <span style={{ color: agent.color }}>Sending...</span>}
         </div>

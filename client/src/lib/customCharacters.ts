@@ -11,6 +11,7 @@ export type CustomCharacterInput = {
   name: string;
   skillId: string;
   color: string;
+  icon?: string;
 };
 
 export const CUSTOM_CHARACTER_STORAGE_KEY = "rts-agent.customCharacters.v1";
@@ -84,7 +85,7 @@ export function createCustomCharacter(input: CustomCharacterInput): Character {
   return {
     id: `custom-${skill.id}-${Date.now()}`,
     name,
-    icon: "",
+    icon: input.icon ?? "",
     color: input.color,
     skill: skill.id,
     custom: true,

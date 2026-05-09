@@ -1,10 +1,15 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrthographicCamera } from "@react-three/drei";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
 import type { AgentView, RoomMap } from "../lib/types";
 import { workshopAnchors } from "../lib/workshopAnchors";
 import Tilemap from "./world/Tilemap";
 import AgentSprite from "./world/AgentSprite";
+
+const MIN_ZOOM = 12;
+const MAX_ZOOM = 120;
+const DEFAULT_ZOOM = 28;
 
 type Props = {
   agents: AgentView[];
@@ -36,26 +41,45 @@ export default function World({
   onPlaceAgent,
 }: Props) {
   const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null);
+  const [view, setView] = useState(() => ({
+    x: mapSize.width / 2,
+    y: mapSize.height / 2,
+    zoom: DEFAULT_ZOOM,
+  }));
+  // Set briefly after a drag-pan ends, so the trailing click doesn't deselect
+  // whatever agent the user had highlighted.
+  const justPannedRef = useRef(false);
   const occupied = new Set(agents.map((agent) => `${agent.position.x},${agent.position.y}`));
   const placing = Boolean(placementColor && onPlaceAgent);
   const canPlace = isBuildableTile(hoverTile, mapSize, occupied);
   const workshopTiles = useMemo(() => workshopAnchors(mapSize), [mapSize.width, mapSize.height]);
 
+  // Recenter when the room's map size changes (rare — only on first mount or
+  // if the room doc updates).
+  useEffect(() => {
+    setView((v) => ({ ...v, x: mapSize.width / 2, y: mapSize.height / 2 }));
+  }, [mapSize.width, mapSize.height]);
+
   return (
     <div className="relative h-full w-full">
       <Canvas
         orthographic
-        onPointerMissed={() => onSelectAgent(null)}
+        onPointerMissed={() => {
+          if (justPannedRef.current) return;
+          onSelectAgent(null);
+        }}
         gl={{ antialias: true }}
-        style={{ background: "#0c0a09" }}
+        style={{ background: "#efe6cd" }}
       >
         <OrthographicCamera
           makeDefault
-          position={[mapSize.width / 2, mapSize.height / 2, 50]}
-          zoom={28}
+          position={[view.x, view.y, 50]}
+          zoom={view.zoom}
           near={0.1}
           far={1000}
         />
+        <WheelZoom onChange={setView} />
+        <DragPan onChange={setView} justPannedRef={justPannedRef} />
         <ambientLight intensity={1} />
         <Tilemap width={mapSize.width} height={mapSize.height} />
         {workshopTiles.map((p, i) => (
@@ -124,14 +148,14 @@ export default function World({
 
       {agents.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="max-w-xs rounded-xl border border-cyan-200/10 bg-stone-950/75 p-4 text-center shadow-2xl shadow-black/40 backdrop-blur">
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200/70">
+          <div className="max-w-xs rounded-xl border border-line bg-paper/90 p-4 text-center shadow-xl shadow-amber-900/10 backdrop-blur">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800">
               Awaiting deployment
             </div>
-            <p className="mt-2 text-sm font-medium text-stone-200">
-              Choose a specialist from the roster, then describe the task to spawn your first agent.
+            <p className="mt-2 text-sm font-medium text-ink">
+              Hit <span className="text-cyan-800">+ Spawn agent</span> in the top-left to pick a specialist and describe the task.
             </p>
-            <p className="mt-2 text-xs text-stone-500">
+            <p className="mt-2 text-xs text-ink-soft">
               The command grid is ready. Agents will appear here as soon as Convex confirms the spawn.
             </p>
           </div>
@@ -139,4 +163,137 @@ export default function World({
       )}
     </div>
   );
+}
+
+type View = { x: number; y: number; zoom: number };
+type ViewSetter = React.Dispatch<React.SetStateAction<View>>;
+
+// Scroll-wheel + trackpad pinch zoom that anchors on the cursor's world point
+// so zooming in keeps whatever you're hovering centered. preventDefault stops
+// the browser from page-zooming when the cursor is over the canvas.
+function WheelZoom({ onChange }: { onChange: ViewSetter }) {
+  const { gl } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+      // exp(-deltaY * k) gives smooth multiplicative zoom in both directions.
+      // Trackpad pinch sets ctrlKey; bump sensitivity there since deltaY is small.
+      const k = e.ctrlKey ? 0.01 : 0.0015;
+      const factor = Math.exp(-e.deltaY * k);
+
+      // Functional update so consecutive wheel ticks compose on the latest
+      // accumulated state instead of all reading the original camera values.
+      onChange((prev) => {
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev.zoom * factor));
+        // World point currently under the cursor — stays fixed across the zoom.
+        const worldX = prev.x + (ndcX * rect.width) / (2 * prev.zoom);
+        const worldY = prev.y + (ndcY * rect.height) / (2 * prev.zoom);
+        return {
+          zoom: newZoom,
+          x: worldX - (ndcX * rect.width) / (2 * newZoom),
+          y: worldY - (ndcY * rect.height) / (2 * newZoom),
+        };
+      });
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [gl, onChange]);
+
+  return null;
+}
+
+// Left-button drag-to-pan. Movement under THRESHOLD is treated as a click, so
+// agent selection (R3F onClick) still works on a quick tap. Once the threshold
+// is crossed, we set justPannedRef so World's onPointerMissed skips deselect on
+// the trailing pointerup.
+function DragPan({
+  onChange,
+  justPannedRef,
+}: {
+  onChange: ViewSetter;
+  justPannedRef: React.MutableRefObject<boolean>;
+}) {
+  const { gl } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const THRESHOLD = 4; // px before a click becomes a drag
+
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let active = false;
+    let panning = false;
+
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      active = true;
+      panning = false;
+      startX = lastX = e.clientX;
+      startY = lastY = e.clientY;
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (!active) return;
+      if (!panning) {
+        if (
+          Math.abs(e.clientX - startX) < THRESHOLD &&
+          Math.abs(e.clientY - startY) < THRESHOLD
+        )
+          return;
+        panning = true;
+        canvas.style.cursor = "grabbing";
+        canvas.setPointerCapture?.(e.pointerId);
+      }
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      // Functional update — multiple pointermoves between renders compose
+      // correctly. Three.js Y is up vs. screen Y down, hence the sign flip.
+      onChange((prev) => ({
+        x: prev.x - dx / prev.zoom,
+        y: prev.y + dy / prev.zoom,
+        zoom: prev.zoom,
+      }));
+    };
+
+    const onUp = () => {
+      if (panning) {
+        canvas.style.cursor = "";
+        justPannedRef.current = true;
+        // Clear after the trailing click event is dispatched, so onPointerMissed
+        // sees the flag and skips its deselect call.
+        window.setTimeout(() => {
+          justPannedRef.current = false;
+        }, 50);
+      }
+      active = false;
+      panning = false;
+    };
+
+    canvas.addEventListener("pointerdown", onDown);
+    canvas.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+
+    return () => {
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [gl, onChange, justPannedRef]);
+
+  return null;
 }

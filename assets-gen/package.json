@@ -6,11 +6,18 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "force": "tsx src/index.ts --force",
+    "avatars": "tsx src/avatars.ts",
+    "avatars:force": "tsx src/avatars.ts --force",
+    "buildings": "tsx src/buildings.ts",
+    "buildings:force": "tsx src/buildings.ts --force",
+    "animate-building": "tsx src/animate-building.ts",
+    "trim-avatars": "tsx src/trim-avatars.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "openai": "^4.70.0"
+    "openai": "^4.70.0",
+    "sharp": "^0.34.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",
