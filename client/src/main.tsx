@@ -3,14 +3,24 @@ import ReactDOM from "react-dom/client";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import App from "./App";
 import Editor from "./components/editor/Editor";
+import Playground from "./components/playground/Playground";
 import "./index.css";
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
-const isEditor = window.location.pathname.replace(/\/$/, "") === "/editor";
+const path = window.location.pathname.replace(/\/$/, "");
+const isEditor = path === "/editor";
+const isPlayground = path === "/playground";
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
-if (isEditor) {
+if (isPlayground) {
+  // Asset playground: client-only, talks to /api/img/* via the Vite middleware.
+  root.render(
+    <React.StrictMode>
+      <Playground />
+    </React.StrictMode>,
+  );
+} else if (isEditor) {
   // Worldbuilder: client-only, no Convex needed.
   root.render(
     <React.StrictMode>
