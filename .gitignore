@@ -29,3 +29,6 @@ pnpm-debug.log*
 
 # generated assets (regenerate via /assets-gen)
 client/public/assets/generated/
+
+# playground saves (per-developer iteration scratch — not shared)
+client/public/assets/playground/
