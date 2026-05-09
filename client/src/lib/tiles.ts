@@ -6,7 +6,8 @@ import * as THREE from "three";
 //
 // Theme: modern tropical Singapore city base layer. Pixel-art technique, but
 // the subject vocabulary is real — HDB parks, hawker tile, zebra crossings,
-// Marina Bay water — not medieval/fantasy.
+// Marina Bay water — not medieval/fantasy. Peranakan/neighborhood building tiles
+// can extend this set once formatted assets are checked in.
 
 export const TILE_PATHS = {
   // Park / nature

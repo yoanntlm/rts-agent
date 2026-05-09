@@ -8,6 +8,7 @@ type Props = {
   users: User[];
   selfUserId?: string | null;
   connectionStatus?: ConnectionStatus;
+  runnerBanner?: string | null;
 };
 
 const CONNECTION_META: Record<
@@ -36,6 +37,7 @@ export default function TopBar({
   users,
   selfUserId,
   connectionStatus = "connected",
+  runnerBanner,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const connection = CONNECTION_META[connectionStatus];
@@ -53,7 +55,7 @@ export default function TopBar({
 
   return (
     <div className="flex h-full items-center justify-between bg-gradient-to-r from-stone-900 via-stone-900/80 to-transparent px-4">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <span className="text-base font-bold tracking-tight transition-[letter-spacing] duration-200 ease-out hover:tracking-[0.03em]">
           rts-agent
         </span>
@@ -71,6 +73,14 @@ export default function TopBar({
           />
           {connection.label}
         </span>
+        {runnerBanner ? (
+          <span
+            className="max-w-[min(280px,40vw)] truncate rounded-full border border-amber-200/15 bg-amber-400/5 px-2 py-1 text-[10px] font-medium text-amber-100/90"
+            title={runnerBanner}
+          >
+            {runnerBanner}
+          </span>
+        ) : null}
       </div>
       <div className="flex items-center gap-3">
         <a

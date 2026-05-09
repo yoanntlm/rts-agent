@@ -9,6 +9,7 @@ type Props = {
   onBeginDrag?: (id: string) => void;
   onCreateAvatar?: () => void;
   disabled?: boolean;
+  runnerBanner?: string | null;
 };
 
 export default function Roster({
@@ -19,6 +20,7 @@ export default function Roster({
   onBeginDrag,
   onCreateAvatar,
   disabled,
+  runnerBanner,
 }: Props) {
   const selectedCharacter = characters.find((c) => c.id === selectedCharacterId) ?? null;
 
@@ -32,6 +34,11 @@ export default function Roster({
           {characters.length} characters
         </div>
       </div>
+      {runnerBanner ? (
+        <div className="mx-1 rounded-lg border border-amber-200/12 bg-amber-950/30 px-2 py-1.5 text-[10px] leading-snug text-amber-100/90">
+          {runnerBanner}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2">
         {characters.map((c) => (
           <RosterCard

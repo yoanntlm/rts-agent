@@ -28,6 +28,7 @@ import { Daytona, type Sandbox } from "@daytonaio/sdk";
 import { api } from "../../../convex/_generated/api.js";
 import type { Id } from "../../../convex/_generated/dataModel.js";
 import { getCharacter } from "./characters.js";
+import { nearestAnchor, stepToward, workshopAnchors } from "./workshopAnchors.js";
 
 type AgentId = Id<"agents">;
 
@@ -36,6 +37,8 @@ type AgentDoc = {
   name: string;
   task: string;
   characterId: string;
+  roomId: Id<"rooms">;
+  position: { x: number; y: number };
 };
 
 const PROGRESS_TARGET_TOOL_CALLS = 8;
@@ -67,6 +70,7 @@ if (daytonaClient) {
 // ---- Public entry point
 
 export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<void> {
+  let walkTimer: ReturnType<typeof setInterval> | null = null;
   const character = getCharacter(agent.characterId);
   if (!character) {
     await failAgent(client, agent._id, `Unknown character: ${agent.characterId}`);
@@ -185,11 +189,43 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
         progress: 0,
       }),
     );
+
+    let walkTargetLabel = "";
+    try {
+      const roomDoc = (await client.query(api.rooms.get, {
+        roomId: agent.roomId,
+      })) as { map: { width: number; height: number } } | null;
+      const map = roomDoc?.map ?? { width: 28, height: 20 };
+      const anchors = workshopAnchors(map);
+      let walkPos = {
+        x: Math.round(agent.position.x),
+        y: Math.round(agent.position.y),
+      };
+      const walkTarget = nearestAnchor(walkPos, anchors);
+      walkTargetLabel = `(${walkTarget.x}, ${walkTarget.y})`;
+      walkTimer = setInterval(() => {
+        void (async () => {
+          if (walkPos.x === walkTarget.x && walkPos.y === walkTarget.y) return;
+          walkPos = stepToward(walkPos, walkTarget);
+          await safeMutation(() =>
+            client.mutation(api.agents.update, {
+              agentId: agent._id,
+              position: { ...walkPos },
+            }),
+          );
+        })();
+      }, 400);
+    } catch {
+      // Stay at spawn if room lookup fails
+    }
+
     await safeMutation(() =>
       client.mutation(api.transcript.append, {
         agentId: agent._id,
         role: "system",
-        text: `Spawned as ${character.name}. ${useSandbox ? "Bash → Daytona sandbox." : "Bash → host tempdir."}`,
+        text: `Spawned as ${character.name}. ${useSandbox ? "Bash → Daytona sandbox." : "Bash → host tempdir."}${
+          walkTargetLabel ? ` Walking to workshop tile ${walkTargetLabel}.` : ""
+        }`,
       }),
     );
 
@@ -246,6 +282,7 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
             client.mutation(api.agents.update, {
               agentId: agent._id,
               progress: Math.min(toolCount / PROGRESS_TARGET_TOOL_CALLS, 0.95),
+              lastMessage: `🔧 ${toolName}`,
             }),
           );
           safeMutation(() =>
@@ -369,6 +406,7 @@ You have **bash, write, read, edit, ls, find, grep** — all running on a local 
       throw err;
     } finally {
       clearInterval(userTurnPoll);
+      if (walkTimer) clearInterval(walkTimer);
       await flushText();
       try {
         await session.dispose();
@@ -379,6 +417,7 @@ You have **bash, write, read, edit, ls, find, grep** — all running on a local 
     console.error(`[runner] ${agent._id} fatal:`, err);
     await failAgent(client, agent._id, message);
   } finally {
+    if (walkTimer) clearInterval(walkTimer);
     await cleanup();
   }
 }

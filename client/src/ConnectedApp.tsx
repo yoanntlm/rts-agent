@@ -66,6 +66,27 @@ export default function ConnectedApp() {
   const usersInRoom = useQuery(api.users.listInRoom, roomId ? { roomId } : "skip") as
     | UserRow[]
     | undefined;
+  const roomDoc = useQuery(api.rooms.get, roomId ? { roomId } : "skip");
+  const mapSize = roomDoc?.map ?? MAP_SIZE;
+
+  const runnerBanner = useMemo(() => {
+    if (!agents?.length) return null;
+    const staleMs = 18_000;
+    const now = Date.now();
+    const queued = agents.filter((a) => a.status === "idle" && a.runnerSpawnedAt === undefined);
+    const staleQueued = queued.filter((a) => now - a.lastActivityAt > staleMs);
+    if (staleQueued.length > 0) {
+      return `Runner may be offline — ${staleQueued.length} agent(s) queued ${Math.round(staleMs / 1000)}s+`;
+    }
+    if (queued.length > 0) {
+      return `${queued.length} agent(s) queued for runner`;
+    }
+    const starting = agents.filter((a) => a.status === "idle" && a.runnerSpawnedAt !== undefined);
+    if (starting.length > 0) {
+      return `${starting.length} agent(s) connecting…`;
+    }
+    return null;
+  }, [agents]);
 
   const [selectedAgentId, setSelectedAgentId] = useState<Id<"agents"> | null>(null);
   const transcript = useQuery(
@@ -92,6 +113,7 @@ export default function ConnectedApp() {
     setIsSpawning(true);
     setAppError(null);
     try {
+      const occupied = new Set((agents ?? []).map((a) => `${a.position.x},${a.position.y}`));
       const agentId = (await spawnAgent({
         roomId,
         ownerUserId: userId,
@@ -99,10 +121,7 @@ export default function ConnectedApp() {
         name: name?.trim() || character.name,
         sprite: character.icon,
         color: character.color,
-        position: spawnPosition ?? {
-          x: Math.floor(Math.random() * (MAP_SIZE.width - 2)) + 1,
-          y: Math.floor(Math.random() * (MAP_SIZE.height - 2)) + 1,
-        },
+        position: spawnPosition ?? pickSpawnPosition(occupied, mapSize),
         task,
       })) as Id<"agents">;
       setSelectedAgentId(agentId);
@@ -188,6 +207,7 @@ export default function ConnectedApp() {
             users={usersInRoom ?? []}
             selfUserId={userId}
             connectionStatus={roomId ? "connected" : "reconnecting"}
+            runnerBanner={runnerBanner}
           />
         }
         roster={
@@ -207,12 +227,13 @@ export default function ConnectedApp() {
             }}
             onCreateAvatar={() => setShowAvatarCreator(true)}
             disabled={!roomId || !userId}
+            runnerBanner={runnerBanner}
           />
         }
         world={
           <World
             agents={(agents ?? []).map(toAgentView)}
-            mapSize={MAP_SIZE}
+            mapSize={mapSize}
             onSelectAgent={(id) => setSelectedAgentId(id as Id<"agents"> | null)}
             selectedAgentId={selectedAgentId}
             placementColor={dragCharacter?.color ?? null}
@@ -294,6 +315,7 @@ type AgentRow = {
   progress?: number;
   lastMessage?: string;
   runnerSpawnedAt?: number;
+  lastActivityAt: number;
 };
 
 type TranscriptRow = {
@@ -321,5 +343,21 @@ function toAgentView(a: AgentRow): AgentView {
     progress: a.progress,
     lastMessage: a.lastMessage,
     runnerSpawnedAt: a.runnerSpawnedAt,
+    lastActivityAt: a.lastActivityAt,
   };
+}
+
+function pickSpawnPosition(
+  occupied: Set<string>,
+  map: { width: number; height: number },
+): { x: number; y: number } {
+  const opts: { x: number; y: number }[] = [];
+  for (let x = 1; x < map.width - 1; x++) {
+    for (let y = 1; y < map.height - 1; y++) {
+      const key = `${x},${y}`;
+      if (!occupied.has(key)) opts.push({ x, y });
+    }
+  }
+  if (opts.length === 0) return { x: 1, y: 1 };
+  return opts[Math.floor(Math.random() * opts.length)]!;
 }

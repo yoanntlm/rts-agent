@@ -82,6 +82,7 @@ export default function Inspector({
     setDraft("");
   };
   const queuedForRunner = agent.status === "idle" && agent.runnerSpawnedAt === undefined;
+  const startingUp = agent.status === "idle" && agent.runnerSpawnedAt !== undefined;
 
   return (
     <div className="flex h-full flex-col">
@@ -100,7 +101,12 @@ export default function Inspector({
             <div className="truncate text-sm font-semibold text-stone-100">{agent.name}</div>
             <div className="mt-1 flex items-center gap-2 text-xs">
               <span style={{ color: STATUS_COLOR[agent.status] }}>
-                ● {queuedForRunner ? "Queued for runner" : STATUS_LABEL[agent.status]}
+                ●{" "}
+                {queuedForRunner
+                  ? "Queued for runner"
+                  : startingUp
+                    ? "Runner starting session…"
+                    : STATUS_LABEL[agent.status]}
               </span>
               {typeof agent.progress === "number" && (
                 <span className="text-stone-500">
@@ -131,12 +137,25 @@ export default function Inspector({
             This agent has been queued in Convex and is waiting for the runner to claim it.
           </div>
         )}
+        {startingUp && (
+          <div className="mt-2 rounded-md border border-emerald-200/10 bg-emerald-950/15 px-2 py-1.5 text-xs text-emerald-100/85">
+            Runner claimed this agent — spinning up the session. Watch the map: they walk to the nearest workshop ring.
+          </div>
+        )}
+        {agent.lastMessage ? (
+          <div className="mt-2 rounded-md border border-stone-800 bg-stone-950/55 px-2 py-1.5 font-mono text-[10px] leading-snug text-stone-300">
+            <span className="text-stone-500">Live: </span>
+            <span className="break-words">{agent.lastMessage}</span>
+          </div>
+        ) : null}
       </header>
 
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto p-3">
         {transcript.length === 0 && (
           <div className="rounded-lg border border-stone-800 bg-stone-950/60 p-3 text-xs text-stone-500">
-            No transcript yet. The runner will stream activity here once it claims this agent.
+            {startingUp || queuedForRunner
+              ? "Transcript will appear when the runner connects and streams activity."
+              : "No transcript yet. Activity from the runner shows up here in real time."}
           </div>
         )}
         {transcript.map((t) => (

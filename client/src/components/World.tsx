@@ -1,7 +1,8 @@
 import { Canvas } from "@react-three/fiber";
 import { OrthographicCamera } from "@react-three/drei";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AgentView, RoomMap } from "../lib/types";
+import { workshopAnchors } from "../lib/workshopAnchors";
 import Tilemap from "./world/Tilemap";
 import AgentSprite from "./world/AgentSprite";
 
@@ -38,6 +39,7 @@ export default function World({
   const occupied = new Set(agents.map((agent) => `${agent.position.x},${agent.position.y}`));
   const placing = Boolean(placementColor && onPlaceAgent);
   const canPlace = isBuildableTile(hoverTile, mapSize, occupied);
+  const workshopTiles = useMemo(() => workshopAnchors(mapSize), [mapSize.width, mapSize.height]);
 
   return (
     <div className="relative h-full w-full">
@@ -56,6 +58,19 @@ export default function World({
         />
         <ambientLight intensity={1} />
         <Tilemap width={mapSize.width} height={mapSize.height} />
+        {workshopTiles.map((p, i) => (
+          <group key={i} position={[p.x + 0.5, p.y + 0.5, 0.055]}>
+            <mesh>
+              <ringGeometry args={[0.36, 0.46, 36]} />
+              <meshBasicMaterial
+                color="#f59e0b"
+                transparent
+                opacity={0.24}
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
+        ))}
         {placing && (
           <mesh
             position={[mapSize.width / 2, mapSize.height / 2, 0.09]}
