@@ -67,7 +67,7 @@ export default function TopBar({
     <div className="flex h-full items-center justify-between px-4">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <span className="text-base font-bold tracking-tight text-ink transition-[letter-spacing] duration-200 ease-out hover:tracking-[0.03em]">
-          rts-agent
+          LeagueCode
         </span>
         <span className="text-ink-soft">·</span>
         <span className="text-sm text-ink-muted">
