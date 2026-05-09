@@ -20,5 +20,14 @@ export default defineConfig({
       // Allow imports from the monorepo root (characters/, convex/).
       allow: [path.resolve(__dirname, "..")],
     },
+    // Forward the runner's read-only file API to the prod VPS during local dev.
+    // In prod (Caddy), this same path is reverse-proxied to localhost:4000.
+    proxy: {
+      "/api/code": {
+        target: "https://citybuilder.yoanntlm.com",
+        changeOrigin: true,
+        secure: true,
+      },
+    },
   },
 });

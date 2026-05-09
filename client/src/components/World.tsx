@@ -140,15 +140,10 @@ export default function World({
         )}
         {/* Construction sites — render at the workshop anchor (= destination
             shifted 2 tiles north, since destination is the standing tile in
-            front of the building) while the agent is still walking. Once
-            position == destination the agent has arrived in front of the
-            site, so hide it. */}
+            front of the building). Stays on while the agent is working so
+            the world reads as "this agent is building something here". */}
         {agents.map((agent) => {
           if (!agent.destination) return null;
-          const arrived =
-            agent.position.x === agent.destination.x &&
-            agent.position.y === agent.destination.y;
-          if (arrived) return null;
           return (
             <BuildingSprite
               key={`construction-${agent.id}`}

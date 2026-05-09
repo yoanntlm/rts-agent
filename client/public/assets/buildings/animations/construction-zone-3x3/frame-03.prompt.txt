@@ -1,35 +1,10 @@
-This is FRAME 3 of 6 in a looping animation of a
-"construction-zone-3x3" — a Singapore HDB-style construction site rendered in cozy
-pixel-art Stardew Valley style. The reference image you've been given is
-the canonical scene.
+Deterministic locked-base frame 3/6 for "construction-zone-3x3".
+The source building PNG is reused pixel-for-pixel as the base layer.
+Only scripted overlay effects are composited above it, so the scene geometry, fence, dirt, machinery, and props stay exactly registered across every frame.
 
-KEEP EXACTLY IDENTICAL to the reference image:
-- The blue-and-white corrugated hoarding fence around the entire perimeter
-  (with yellow-and-black warning stripes along the top edge).
-- The ochre construction-dirt ground texture, including all tire tracks
-  and gravel patches.
-- The yellow tower crane's TOWER (the upright structure in the upper-left
-  corner) and its horizontal jib arm position — the jib does NOT rotate.
-- All material piles in their current positions: rebar bundles top-right,
-  brick stack right, construction-mesh roll left, sandbag pile bottom-left.
-- The two orange traffic cones (bottom center) and the yellow caution sign
-  (bottom-right).
-- Camera angle, lighting, palette, pixel-art technique, frame composition.
-- Image size and aspect ratio.
-
-CHANGE ONLY the following from the reference (this frame's specific motion):
-
+Effect note:
 The yellow-and-orange caterpillar excavator's BUCKET is TOUCHING THE
 GROUND mid-scoop, the arm extended fully forward and down. A VISIBLE
 DUST CLOUD surrounds the bucket where it's hitting the dirt — about
 twice the size of the bucket itself, soft pale-tan dust. The crane's
 CABLE HOOK is at MID-HEIGHT, cable about half-extended.
-
-Output rules: same 1024x1024 frame, same composition, edge-to-edge fence.
-Do not redesign the scene, do not add new objects beyond the listed
-changes, do not move material piles or signs. The animation depends on
-everything except the listed changes staying still.
-
-EXPLICITLY AVOID: changing the crane jib direction, moving the material
-piles, adding workers/people, changing the perimeter fence pattern,
-showing sky, changing the camera angle.

@@ -357,10 +357,19 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
         </group>
       )}
 
+      <Html center transform position={[0, -0.6, 0.08]} distanceFactor={8} zIndexRange={[10, 0]}>
+        <div
+          className="max-w-44 truncate rounded-full border border-stone-700/70 bg-stone-950/90 px-2.5 py-0.5 font-mono text-[8px] font-semibold shadow-lg shadow-black/40"
+          style={{ color: agent.color }}
+        >
+          {agent.name}
+        </div>
+      </Html>
+
       {agent.lastMessage ? (
-        <Html center transform position={[0, 0.52, 0.08]} distanceFactor={7} zIndexRange={[10, 0]}>
+        <Html center transform position={[0, -0.92, 0.08]} distanceFactor={7} zIndexRange={[10, 0]}>
           <div
-            className="pointer-events-none max-w-[148px] truncate rounded-md border px-1.5 py-0.5 font-mono text-[8px] leading-tight text-stone-100 shadow-lg shadow-black/40"
+            className="pointer-events-none max-w-[180px] truncate rounded-md border px-1.5 py-0.5 font-mono text-[8px] leading-tight text-stone-100 shadow-lg shadow-black/40"
             style={{
               borderColor: `${agent.color}66`,
               background: "rgba(12,10,9,0.94)",
@@ -371,15 +380,6 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
           </div>
         </Html>
       ) : null}
-
-      <Html center transform position={[0, -0.62, 0.08]} distanceFactor={8} zIndexRange={[10, 0]}>
-        <div
-          className="max-w-24 truncate rounded-full border border-stone-700/70 bg-stone-950/90 px-1.5 py-0.5 font-mono text-[8px] font-semibold shadow-lg shadow-black/40"
-          style={{ color: agent.color }}
-        >
-          {agent.name}
-        </div>
-      </Html>
     </group>
   );
 }

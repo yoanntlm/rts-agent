@@ -75,6 +75,54 @@ if (daytonaClient) {
 // from Daytona's API on every agent in the same room.
 const roomSandboxCache = new Map<string, Sandbox>();
 
+// Common dev-server ports we expose preview URLs for. Express:3000 ·
+// Vite:5173 · http.server/Django/Flask:8000 · Webpack/CRA:8080
+const PREVIEW_PORTS = [3000, 5173, 8000, 8080];
+
+// Per-room cache of the full {port, url} list (Daytona-provided). We probe
+// these ports periodically and only push the live subset to Convex so the UI
+// dropdown never exposes dead ports (which 502 through Daytona's proxy).
+const roomPreviewUrlsCache = new Map<string, { port: number; url: string }[]>();
+const roomProbeTimers = new Map<string, ReturnType<typeof setInterval>>();
+const PROBE_INTERVAL_MS = 5000;
+
+// Heartbeat: Daytona auto-archives idle sandboxes (typically after ~30 min of
+// no activity). When that happens preview URLs return 400 and the dev server
+// inside dies. We ping every cached sandbox at a steady interval so Daytona
+// keeps them warm. ~300ms per sandbox per ping, well under the archive window.
+const HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+function ensureSandboxHeartbeat() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    void (async () => {
+      for (const [roomId, sandbox] of roomSandboxCache.entries()) {
+        try {
+          const proc = (sandbox as unknown as {
+            process: { executeCommand: (cmd: string) => Promise<unknown> };
+          }).process;
+          await proc.executeCommand("date > /dev/null 2>&1");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[heartbeat] sandbox for room ${roomId} failed: ${msg}`);
+          roomSandboxCache.delete(roomId);
+        }
+      }
+    })();
+  }, HEARTBEAT_INTERVAL_MS);
+  console.log(
+    `[runner] sandbox heartbeat started — pinging cached sandboxes every ${HEARTBEAT_INTERVAL_MS / 1000}s`,
+  );
+}
+
+// Per-room Daytona session id. We route ALL bash through this session because
+// `process.executeCommand` kills the process group when the call returns —
+// even `setsid nohup ... &` doesn't survive (verified empirically: agents
+// repeatedly tried `nohup`, `disown`, `child_process.spawn detached`, and
+// `setsid -f` and none of them kept a server running). A long-lived session
+// shell stays alive across calls, so `&`-backgrounded children persist.
+const roomSessionIds = new Map<string, string>();
+
 // ---- Public entry point
 
 export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<void> {
@@ -118,9 +166,11 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
     console.log(`[runner] ${agent.name}: using ${model.provider}/${model.id} in ${cwd}`);
 
     // 2. Resolve the room's persistent sandbox (create on first agent, reuse after).
+    let sandboxSessionId: string | null = null;
     if (daytonaClient) {
       try {
         sandbox = await getOrCreateRoomSandbox(client, agent.roomId, agent.name);
+        sandboxSessionId = await ensureRoomSession(sandbox, agent.roomId);
       } catch (err) {
         console.error("[runner] Daytona sandbox resolve/create failed:", err);
         sandbox = null;
@@ -142,7 +192,7 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (pi: any) => {
               const localBash = createBashTool(cwd);
-              const daytonaOps = makeDaytonaBashOps(sandbox!, agent.name);
+              const daytonaOps = makeDaytonaBashOps(sandbox!, sandboxSessionId!, agent.name);
               pi.registerTool({
                 ...localBash,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -501,8 +551,9 @@ You have **bash, write, read, edit, ls, find, grep** — all running on a local 
 // ---- helpers
 
 // Resolves the room's persistent sandbox. On first call for a room: creates
-// the sandbox via Daytona, fetches a preview URL for port 3000, and persists
-// both to the `rooms` row so the client can render a "View running app" link.
+// the sandbox via Daytona and persists its id to the `rooms` row. Preview URLs
+// are populated lazily by a periodic liveness probe (see startProbeLoop) so
+// the UI dropdown only shows ports that have a server actually listening.
 // Subsequent calls: reuses the cached/resolved sandbox.
 async function getOrCreateRoomSandbox(
   client: ConvexClient,
@@ -520,9 +571,10 @@ async function getOrCreateRoomSandbox(
     | { sandboxId?: string }
     | null;
 
+  let sandbox: Sandbox;
   if (room?.sandboxId) {
     console.log(`[runner] ${agentName}: re-attaching to room sandbox ${room.sandboxId}`);
-    const sandbox = await daytonaClient.get(room.sandboxId);
+    sandbox = await daytonaClient.get(room.sandboxId);
     // Sandbox may be archived/stopped from a previous session — start it.
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -530,67 +582,199 @@ async function getOrCreateRoomSandbox(
     } catch {
       // Already running, or start not needed — that's fine.
     }
-    roomSandboxCache.set(roomId, sandbox);
-    return sandbox;
+    // The dev server (nohup'd `node server.js`) doesn't survive an archive.
+    // Try to bring it back via npm start (DevOps wrote that script).
+    // Idempotent: kills any existing instance first. Non-fatal if no project yet.
+    try {
+      const proc = (sandbox as unknown as {
+        process: { executeCommand: (cmd: string) => Promise<unknown> };
+      }).process;
+      await proc.executeCommand(
+        `cd /home/daytona/project 2>/dev/null && \
+         test -f package.json && \
+         (pkill -f "node server.js" 2>/dev/null; \
+          nohup npm start > /tmp/server.log 2>&1 &) || true`,
+      );
+      console.log(`[runner] ${agentName}: attempted dev server restart on re-attach`);
+    } catch (err) {
+      console.error("[runner] dev server restart on re-attach failed (non-fatal):", err);
+    }
+  } else {
+    console.log(`[runner] ${agentName}: creating new sandbox for room ${roomId}`);
+    sandbox = await daytonaClient.create({ language: "python" });
+
+    // Initialize a git repo at the project root so we can show per-agent diffs.
+    // Failure here is non-fatal — diffs become a no-op if git isn't available.
+    try {
+      const proc = (sandbox as unknown as {
+        process: { executeCommand: (cmd: string) => Promise<unknown> };
+      }).process;
+      await proc.executeCommand(
+        `mkdir -p /home/daytona/project && cd /home/daytona/project && \
+         (git init -q 2>/dev/null || true) && \
+         git config user.email "agent@rts-agent.local" && \
+         git config user.name "agent" && \
+         printf '%s\\n' 'node_modules/' '*.log' '.cache/' 'dist/' 'build/' '.env' '.env.*' > .gitignore && \
+         (git add -A 2>/dev/null || true) && \
+         (git commit -q -m "init" --allow-empty 2>/dev/null || true)`,
+      );
+      console.log(`[runner] ${agentName}: git initialized in /home/daytona/project`);
+    } catch (err) {
+      console.error("[runner] git init failed (non-fatal):", err);
+    }
+
+    const sandboxId = (sandbox as unknown as { id?: string }).id;
+    if (sandboxId) {
+      // Persist the sandbox id with an empty preview list — the probe loop
+      // will populate it as servers come up.
+      await safeMutation(() =>
+        client.mutation(api.rooms.setSandbox, {
+          roomId,
+          sandboxId,
+          previewUrls: [],
+        }),
+      );
+    }
   }
 
-  console.log(`[runner] ${agentName}: creating new sandbox for room ${roomId}`);
-  const sandbox = await daytonaClient.create({ language: "python" });
-  const sandboxId = (sandbox as unknown as { id?: string }).id;
-
-  // Initialize a git repo at the project root so we can show per-agent diffs.
-  // Failure here is non-fatal — diffs become a no-op if git isn't available.
-  try {
-    const proc = (sandbox as unknown as {
-      process: { executeCommand: (cmd: string) => Promise<unknown> };
-    }).process;
-    await proc.executeCommand(
-      `mkdir -p /home/daytona/project && cd /home/daytona/project && \
-       (git init -q 2>/dev/null || true) && \
-       git config user.email "agent@rts-agent.local" && \
-       git config user.name "agent" && \
-       printf '%s\\n' 'node_modules/' '*.log' '.cache/' 'dist/' 'build/' '.env' '.env.*' > .gitignore && \
-       (git add -A 2>/dev/null || true) && \
-       (git commit -q -m "init" --allow-empty 2>/dev/null || true)`,
+  // Resolve and cache the full {port, url} list once. Daytona returns a stable
+  // URL per (sandbox, port), so we only need to fetch this once per room.
+  if (!roomPreviewUrlsCache.has(roomId)) {
+    const all: { port: number; url: string }[] = [];
+    await Promise.all(
+      PREVIEW_PORTS.map(async (port) => {
+        try {
+          const link = await sandbox.getPreviewLink(port);
+          all.push({ port, url: link.url });
+        } catch (err) {
+          console.error(`[runner] getPreviewLink(${port}) failed:`, err);
+        }
+      }),
     );
-    console.log(`[runner] ${agentName}: git initialized in /home/daytona/project`);
-  } catch (err) {
-    console.error("[runner] git init failed (non-fatal):", err);
+    all.sort((a, b) => a.port - b.port);
+    roomPreviewUrlsCache.set(roomId, all);
+    console.log(
+      `[runner] ${agentName}: preview URLs cached: ${all.map((p) => `${p.port}=${p.url}`).join(", ")}`,
+    );
   }
 
-  // Pre-create preview URLs for the common dev-server ports so the UI can
-  // surface the right link no matter which framework the agents pick.
-  // Express:3000 · Vite:5173 · http.server/Django/Flask:8000 · Webpack/CRA:8080
-  const PREVIEW_PORTS = [3000, 5173, 8000, 8080];
-  const previewUrls: { port: number; url: string }[] = [];
-  await Promise.all(
-    PREVIEW_PORTS.map(async (port) => {
+  // Ensure a long-lived Daytona session exists for this room (used by all
+  // bash exec) before any agent starts firing commands. Without this, every
+  // bash call uses a transient process that kills its background children.
+  await ensureRoomSession(sandbox, roomId);
+
+  startProbeLoop(client, roomId, sandbox);
+  roomSandboxCache.set(roomId, sandbox);
+  ensureSandboxHeartbeat();
+  return sandbox;
+}
+
+// Creates (or reuses) a Daytona session for the given room. The session id
+// is stable per-room within the runner process. Background processes started
+// inside the session shell survive across executeSessionCommand calls.
+async function ensureRoomSession(sandbox: Sandbox, roomId: Id<"rooms">): Promise<string> {
+  const existing = roomSessionIds.get(roomId);
+  if (existing) return existing;
+  const sessionId = `room-${roomId}`;
+  const proc = (sandbox as unknown as {
+    process: {
+      createSession: (sessionId: string) => Promise<void>;
+      executeSessionCommand: (
+        sessionId: string,
+        req: { command: string; runAsync?: boolean },
+        timeout?: number,
+      ) => Promise<unknown>;
+    };
+  }).process;
+  try {
+    await proc.createSession(sessionId);
+    console.log(`[runner] created Daytona session ${sessionId} for room ${roomId}`);
+  } catch (err) {
+    // Session may already exist from a prior runner process attached to the
+    // same sandbox — that's fine, we'll just reuse it.
+    console.log(`[runner] reusing existing Daytona session ${sessionId}: ${(err as Error).message}`);
+  }
+  // Anchor the shell to the project dir so subsequent commands don't have to
+  // `cd` every time, and so backgrounded servers default to the right cwd.
+  try {
+    await proc.executeSessionCommand(sessionId, {
+      command: "mkdir -p /home/daytona/project && cd /home/daytona/project",
+    });
+  } catch (err) {
+    console.error(`[runner] session anchor cd failed (non-fatal):`, err);
+  }
+  roomSessionIds.set(roomId, sessionId);
+  return sessionId;
+}
+
+// Probes every preview port from inside the sandbox and patches the room's
+// `previewUrls` to only include ports with a service actually responding.
+// Called both on first-attach and every PROBE_INTERVAL_MS afterwards.
+async function probeAndPushLivePreviewUrls(
+  client: ConvexClient,
+  roomId: Id<"rooms">,
+  sandbox: Sandbox,
+): Promise<void> {
+  const all = roomPreviewUrlsCache.get(roomId) ?? [];
+  if (all.length === 0) return;
+
+  const proc = (sandbox as unknown as {
+    process: {
+      executeCommand: (
+        command: string,
+        cwd?: string,
+        env?: Record<string, string>,
+        timeout?: number,
+      ) => Promise<{ exitCode: number; result: string }>;
+    };
+  }).process;
+
+  const live = await Promise.all(
+    all.map(async ({ port, url }) => {
       try {
-        const link = await sandbox.getPreviewLink(port);
-        previewUrls.push({ port, url: link.url });
-      } catch (err) {
-        console.error(`[runner] getPreviewLink(${port}) failed:`, err);
+        // -s silent · -o /dev/null discard body · --max-time 1 hard cap.
+        // Exit 0 => any HTTP response (server is listening). Non-zero =>
+        // connection refused or timeout => port is dead.
+        const res = await proc.executeCommand(
+          `curl -s -o /dev/null --max-time 1 http://127.0.0.1:${port}`,
+          undefined,
+          undefined,
+          5,
+        );
+        return res.exitCode === 0 ? { port, url } : null;
+      } catch {
+        return null;
       }
     }),
   );
-  previewUrls.sort((a, b) => a.port - b.port);
-  const previewUrl = previewUrls.find((p) => p.port === 3000)?.url;
-  console.log(
-    `[runner] ${agentName}: preview URLs ready: ${previewUrls.map((p) => `${p.port}=${p.url}`).join(", ")}`,
+
+  const filtered = live.filter(
+    (entry): entry is { port: number; url: string } => entry !== null,
   );
 
-  if (sandboxId) {
-    await safeMutation(() =>
-      client.mutation(api.rooms.setSandbox, {
-        roomId,
-        sandboxId,
-        previewUrl,
-        previewUrls,
-      }),
+  await safeMutation(() =>
+    client.mutation(api.rooms.setPreviewUrls, { roomId, previewUrls: filtered }),
+  );
+}
+
+function startProbeLoop(
+  client: ConvexClient,
+  roomId: Id<"rooms">,
+  sandbox: Sandbox,
+): void {
+  if (roomProbeTimers.has(roomId)) return;
+  // Kick an immediate probe so the dropdown updates without waiting a full tick.
+  probeAndPushLivePreviewUrls(client, roomId, sandbox).catch((err) =>
+    console.error("[runner] preview probe failed:", err),
+  );
+  const timer = setInterval(() => {
+    probeAndPushLivePreviewUrls(client, roomId, sandbox).catch((err) =>
+      console.error("[runner] preview probe failed:", err),
     );
-  }
-  roomSandboxCache.set(roomId, sandbox);
-  return sandbox;
+  }, PROBE_INTERVAL_MS);
+  // Don't keep the Node process alive purely for the probe loop.
+  timer.unref?.();
+  roomProbeTimers.set(roomId, timer);
 }
 
 async function pickModel(modelRegistry: ModelRegistry) {
@@ -602,11 +786,15 @@ async function pickModel(modelRegistry: ModelRegistry) {
   return available[0] ?? null;
 }
 
-function makeDaytonaBashOps(sandbox: Sandbox, agentName: string): BashOperations {
+function makeDaytonaBashOps(
+  sandbox: Sandbox,
+  sessionId: string,
+  agentName: string,
+): BashOperations {
   return {
     exec: async (command, _localCwd, options) => {
       // Don't forward the local tempdir as cwd — it doesn't exist in the
-      // sandbox. Let Daytona use its default workspace dir.
+      // sandbox. The session shell is already anchored to /home/daytona/project.
       const startedAt = Date.now();
       console.log(
         `[runner] ${agentName} daytona exec: ${command.slice(0, 120)}${command.length > 120 ? "…" : ""}`,
@@ -617,27 +805,36 @@ function makeDaytonaBashOps(sandbox: Sandbox, agentName: string): BashOperations
           : undefined;
         const proc = (sandbox as unknown as {
           process: {
-            executeCommand: (
-              cmd: string,
-              cwd?: string,
-              env?: Record<string, string>,
+            executeSessionCommand: (
+              sessionId: string,
+              req: { command: string; runAsync?: boolean },
               timeout?: number,
             ) => Promise<{
+              cmdId?: string;
+              output?: string;
+              stdout?: string;
+              stderr?: string;
               exitCode?: number;
-              result?: string;
-              artifacts?: { stdout?: string; stderr?: string };
             }>;
           };
         }).process;
-        const res = await proc.executeCommand(command, undefined, undefined, timeoutSec);
-        const stdout = res.artifacts?.stdout ?? res.result ?? "";
-        const stderr = res.artifacts?.stderr ?? "";
+        const res = await proc.executeSessionCommand(
+          sessionId,
+          { command, runAsync: false },
+          timeoutSec,
+        );
+        // The session API returns split stdout/stderr (normalized by the SDK)
+        // plus a combined `output` field. Prefer the split form when present.
+        const stdout = res.stdout ?? "";
+        const stderr = res.stderr ?? "";
+        const combined = !stdout && !stderr ? res.output ?? "" : "";
         const exitCode = res.exitCode ?? 0;
         console.log(
           `[runner] ${agentName} daytona done in ${Date.now() - startedAt}ms exitCode=${exitCode} stdout=${stdout.length}c stderr=${stderr.length}c`,
         );
         if (stdout) options.onData(Buffer.from(stdout, "utf-8"));
         if (stderr) options.onData(Buffer.from(stderr, "utf-8"));
+        if (combined) options.onData(Buffer.from(combined, "utf-8"));
         return { exitCode };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

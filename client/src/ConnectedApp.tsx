@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -109,6 +109,11 @@ export default function ConnectedApp({ roomName }: Props) {
   const spawnAgent = useMutation(api.agents.spawn);
   const sendMessage = useMutation(api.transcript.userMessage);
 
+  // Destinations this client has just submitted but may not yet appear in the
+  // `agents` query snapshot. Without this, back-to-back spawns race the
+  // Convex subscription and pick the same workshop slot.
+  const inFlightDestinationsRef = useRef<Set<string>>(new Set());
+
   const handleSpawn = async (characterId: string, task: string, name?: string) => {
     if (!roomId || !userId) return;
     const character = characters.find((c) => c.id === characterId) ?? getCharacter(characterId);
@@ -116,13 +121,16 @@ export default function ConnectedApp({ roomName }: Props) {
     setIsSpawning(true);
     setAppError(null);
     try {
-      const occupiedDestinations = new Set(
-        (agents ?? [])
-          .filter((a) => a.destination !== undefined)
-          .map((a) => `${a.destination!.x},${a.destination!.y}`),
-      );
+      const occupiedDestinations = new Set<string>();
+      for (const a of agents ?? []) {
+        if (a.destination) occupiedDestinations.add(`${a.destination.x},${a.destination.y}`);
+      }
+      for (const k of inFlightDestinationsRef.current) occupiedDestinations.add(k);
+
       const entry = pickEntryTile(mapSize);
       const destination = pickDestination(entry, mapSize, occupiedDestinations);
+      const destKey = `${destination.x},${destination.y}`;
+      inFlightDestinationsRef.current.add(destKey);
       const agentId = (await spawnAgent({
         roomId,
         ownerUserId: userId,
@@ -157,6 +165,20 @@ export default function ConnectedApp({ roomName }: Props) {
       setSendPending(false);
     }
   };
+
+  // Once Convex's reactive query catches up and an agent's destination is
+  // visible in `agents`, drop the matching in-flight key so it's no longer
+  // double-counted as occupied.
+  useEffect(() => {
+    if (!agents) return;
+    const visible = new Set<string>();
+    for (const a of agents) {
+      if (a.destination) visible.add(`${a.destination.x},${a.destination.y}`);
+    }
+    for (const k of inFlightDestinationsRef.current) {
+      if (visible.has(k)) inFlightDestinationsRef.current.delete(k);
+    }
+  }, [agents]);
 
   const selectedAgent = agents?.find((a) => a._id === selectedAgentId) ?? null;
 
@@ -339,10 +361,11 @@ function pickEntryTile(map: {
   return { x, y: 1 };
 }
 
-// Pick the closest unoccupied workshop anchor and return the tile the agent
-// should STAND on — one row south of the anchor, just outside the 3×3
-// construction-site footprint. This way the building renders at the anchor
-// itself and the agent stops in front of it.
+// Pick a workshop anchor and return the tile the agent should STAND on — one
+// row south of the anchor, just outside the 3×3 construction-site footprint.
+// Free tiles win; if all four are taken we fall through to any tile. The
+// candidate list is shuffled before nearest-selection so ties from the
+// south-edge entry don't always resolve to the same SW slot.
 function pickDestination(
   from: { x: number; y: number },
   map: { width: number; height: number },
@@ -351,7 +374,17 @@ function pickDestination(
   const anchors = workshopAnchors(map);
   const standTiles = anchors.map((a) => clampTile({ x: a.x, y: a.y - 2 }, map));
   const free = standTiles.filter((s) => !occupied.has(`${s.x},${s.y}`));
-  return nearestAnchor(from, free.length > 0 ? free : standTiles);
+  const pool = free.length > 0 ? free : standTiles;
+  return nearestAnchor(from, shuffle(pool));
+}
+
+function shuffle<T>(items: T[]): T[] {
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
 }
 
 function clampTile(

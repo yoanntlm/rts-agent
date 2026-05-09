@@ -58,6 +58,10 @@ export default defineSchema({
     lastMessage: v.optional(v.string()),
     sandboxId: v.optional(v.string()),
     runnerSpawnedAt: v.optional(v.number()),
+    // Legacy fields from older docs (renamed/dropped). Kept optional so schema
+    // validation accepts pre-migration rows without a backfill.
+    spawnedAt: v.optional(v.number()),
+    arrivedAt: v.optional(v.number()),
     lastActivityAt: v.number(),
   })
     .index("by_room", ["roomId"])

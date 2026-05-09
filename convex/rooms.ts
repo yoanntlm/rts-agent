@@ -77,6 +77,20 @@ export const setSandbox = mutation({
   },
 });
 
+// Periodically called by the agent-runner with the subset of preview URLs
+// whose underlying ports actually responded to a liveness probe inside the
+// sandbox. The dropdown only renders entries from this list, so dead ports
+// (502 from Daytona's proxy) are hidden until a server actually starts.
+export const setPreviewUrls = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    previewUrls: v.array(v.object({ port: v.number(), url: v.string() })),
+  },
+  handler: async (ctx, { roomId, previewUrls }) => {
+    await ctx.db.patch(roomId, { previewUrls });
+  },
+});
+
 export const applyMap = mutation({
   args: {
     roomId: v.id("rooms"),

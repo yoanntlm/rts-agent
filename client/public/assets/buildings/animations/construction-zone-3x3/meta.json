@@ -8,5 +8,7 @@
   "sheetHeight": 1024,
   "suggestedFps": 4,
   "loop": true,
-  "createdAt": "2026-05-09T05:55:25.095Z"
+  "mode": "locked-base",
+  "stableBase": true,
+  "createdAt": "2026-05-09T06:59:21.751Z"
 }
