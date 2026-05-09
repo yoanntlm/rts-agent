@@ -5,6 +5,11 @@ export default defineSchema({
   rooms: defineTable({
     name: v.string(),
     map: v.object({ width: v.number(), height: v.number() }),
+    // Per-room persistent sandbox. All agents in this room operate on the
+    // same Daytona sandbox so their files persist across runs.
+    sandboxId: v.optional(v.string()),
+    // Public preview URL for the running app inside the sandbox (port 3000).
+    previewUrl: v.optional(v.string()),
   }).index("by_name", ["name"]),
 
   users: defineTable({

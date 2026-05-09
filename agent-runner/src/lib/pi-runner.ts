@@ -34,6 +34,7 @@ type AgentId = Id<"agents">;
 
 type AgentDoc = {
   _id: AgentId;
+  roomId: Id<"rooms">;
   name: string;
   task: string;
   characterId: string;
@@ -62,10 +63,16 @@ const DAYTONA_API_KEY = process.env.DAYTONA_API_KEY;
 const daytonaClient = DAYTONA_API_KEY ? new Daytona({ apiKey: DAYTONA_API_KEY }) : null;
 
 if (daytonaClient) {
-  console.log("[runner] Daytona enabled — bash will execute in per-agent sandboxes");
+  console.log(
+    "[runner] Daytona enabled — bash will execute in per-room sandboxes (shared across agents in the same room)",
+  );
 } else {
   console.log("[runner] DAYTONA_API_KEY not set — bash will execute on host tempdir");
 }
+
+// Module-level cache: roomId → resolved Sandbox instance. Avoids re-fetching
+// from Daytona's API on every agent in the same room.
+const roomSandboxCache = new Map<string, Sandbox>();
 
 // ---- Public entry point
 
@@ -83,14 +90,8 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
   const cleanup = async () => {
     if (cleanedUp) return;
     cleanedUp = true;
-    if (sandbox) {
-      try {
-        await (sandbox as unknown as { delete: () => Promise<void> }).delete();
-        console.log(`[runner] ${agent.name}: deleted sandbox`);
-      } catch (err) {
-        console.error("[runner] sandbox cleanup error:", err);
-      }
-    }
+    // NOTE: we DON'T delete the sandbox — it's shared across all agents in
+    // the room and persists for the lifetime of the room. Only clean tempdir.
     try {
       rmSync(cwd, { recursive: true, force: true });
     } catch {}
@@ -111,22 +112,12 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
     }
     console.log(`[runner] ${agent.name}: using ${model.provider}/${model.id} in ${cwd}`);
 
-    // 2. Spin up Daytona sandbox if available
+    // 2. Resolve the room's persistent sandbox (create on first agent, reuse after).
     if (daytonaClient) {
       try {
-        sandbox = await daytonaClient.create({ language: "python" });
-        const sandboxId = (sandbox as unknown as { id?: string }).id;
-        console.log(`[runner] ${agent.name}: created Daytona sandbox ${sandboxId ?? "(no id)"}`);
-        if (sandboxId) {
-          await safeMutation(() =>
-            client.mutation(api.agents.update, {
-              agentId: agent._id,
-              sandboxId,
-            }),
-          );
-        }
+        sandbox = await getOrCreateRoomSandbox(client, agent.roomId, agent.name);
       } catch (err) {
-        console.error("[runner] Daytona sandbox creation failed, falling back to local:", err);
+        console.error("[runner] Daytona sandbox resolve/create failed:", err);
         sandbox = null;
       }
     }
@@ -370,21 +361,46 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
     // appear in the model's "Available tools" section, so we have to tell the
     // model about it explicitly in the prompt — otherwise it refuses to try.
     const toolsBlurb = useSandbox
-      ? `## Tools available to you
+      ? `## Your environment
 
-You have these tools — use them confidently, they all exist:
+You and other agents share a SINGLE persistent cloud sandbox (Daytona) — a Linux box where you all build the project together. Files you write persist for other agents to read and extend later.
 
-- **bash** — runs shell commands in an isolated cloud sandbox (Daytona). The sandbox starts empty and has python3, node, npm, git, curl, and standard Linux utilities. Use this whenever you need to execute code or install packages.
-- **write**, **read**, **edit**, **ls**, **find**, **grep** — operate on a local workspace at \`${cwd}\` that is SEPARATE from the bash sandbox.
+## Available tools
 
-**Important:** because the local workspace and the bash sandbox have separate filesystems, writing a file with \`write\` does NOT make it visible to bash. To execute a script, create it INSIDE the bash sandbox using a heredoc in the same call:
+- **bash** — runs shell commands in the shared sandbox. Use this for everything: install packages (\`npm\`, \`pip\`), write files (heredoc), run servers, etc.
+- **write**, **read**, **edit**, **ls**, **find**, **grep** — these tools operate on a SEPARATE local workspace and are NOT visible to bash. **Avoid them.** Do all file work via \`bash\` so it persists in the shared sandbox.
+
+## Project conventions
+
+The shared project lives at \`/home/daytona/project/\` (cd there first; create it if missing). The stack is **Express + static frontend** unless the task says otherwise:
+
+- \`server.js\` — Express server, listens on **port 3000** (this is the publicly-previewed port)
+- \`public/index.html\`, \`public/style.css\`, \`public/app.js\` — frontend, served as static files by Express
+- \`package.json\` — Node deps (express, etc.)
+- \`tests/\` — test files
+
+## How to run code
+
+Always create files via bash heredoc and execute in the same call. Example:
 
 \`\`\`bash
-cat <<'EOF' > script.py
-print('hi')
+mkdir -p /home/daytona/project && cd /home/daytona/project
+cat <<'EOF' > server.js
+const express = require('express');
+const app = express();
+app.use(express.static('public'));
+app.listen(3000, () => console.log('listening on 3000'));
 EOF
-python3 script.py
 \`\`\`
+
+To start the server in the background so other agents (and the preview URL) can hit it:
+
+\`\`\`bash
+cd /home/daytona/project && (pkill -f "node server.js" 2>/dev/null; nohup node server.js > /tmp/server.log 2>&1 &)
+sleep 1 && curl -s http://localhost:3000 | head -c 200
+\`\`\`
+
+Always restart the server after code changes so the preview URL reflects them.
 
 `
       : `## Tools available to you
@@ -423,6 +439,60 @@ You have **bash, write, read, edit, ls, find, grep** — all running on a local 
 }
 
 // ---- helpers
+
+// Resolves the room's persistent sandbox. On first call for a room: creates
+// the sandbox via Daytona, fetches a preview URL for port 3000, and persists
+// both to the `rooms` row so the client can render a "View running app" link.
+// Subsequent calls: reuses the cached/resolved sandbox.
+async function getOrCreateRoomSandbox(
+  client: ConvexClient,
+  roomId: Id<"rooms">,
+  agentName: string,
+): Promise<Sandbox> {
+  if (!daytonaClient) throw new Error("Daytona not configured");
+  const cached = roomSandboxCache.get(roomId);
+  if (cached) {
+    console.log(`[runner] ${agentName}: reusing cached sandbox for room ${roomId}`);
+    return cached;
+  }
+
+  const room = (await client.query(api.rooms.get, { roomId })) as
+    | { sandboxId?: string }
+    | null;
+
+  if (room?.sandboxId) {
+    console.log(`[runner] ${agentName}: re-attaching to room sandbox ${room.sandboxId}`);
+    const sandbox = await daytonaClient.get(room.sandboxId);
+    // Sandbox may be archived/stopped from a previous session — start it.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (daytonaClient as any).start(sandbox, 60);
+    } catch {
+      // Already running, or start not needed — that's fine.
+    }
+    roomSandboxCache.set(roomId, sandbox);
+    return sandbox;
+  }
+
+  console.log(`[runner] ${agentName}: creating new sandbox for room ${roomId}`);
+  const sandbox = await daytonaClient.create({ language: "python" });
+  const sandboxId = (sandbox as unknown as { id?: string }).id;
+  let previewUrl: string | undefined;
+  try {
+    const link = await sandbox.getPreviewLink(3000);
+    previewUrl = link.url;
+    console.log(`[runner] ${agentName}: preview URL ready at ${previewUrl}`);
+  } catch (err) {
+    console.error("[runner] getPreviewLink failed:", err);
+  }
+  if (sandboxId) {
+    await safeMutation(() =>
+      client.mutation(api.rooms.setSandbox, { roomId, sandboxId, previewUrl }),
+    );
+  }
+  roomSandboxCache.set(roomId, sandbox);
+  return sandbox;
+}
 
 async function pickModel(modelRegistry: ModelRegistry) {
   const available = await modelRegistry.getAvailable();

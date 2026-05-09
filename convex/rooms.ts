@@ -37,3 +37,15 @@ export const getByName = query({
       .withIndex("by_name", (q) => q.eq("name", name))
       .unique(),
 });
+
+// Called by the agent-runner once it provisions the room's persistent sandbox.
+export const setSandbox = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    sandboxId: v.string(),
+    previewUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, { roomId, sandboxId, previewUrl }) => {
+    await ctx.db.patch(roomId, { sandboxId, previewUrl });
+  },
+});
