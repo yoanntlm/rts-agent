@@ -17,6 +17,13 @@ export default function TopBar({ roomName, users, selfUserId }: Props) {
         </span>
       </div>
       <div className="flex items-center gap-2">
+        <a
+          href="/editor"
+          className="rounded border border-stone-700 px-2 py-1 text-xs text-stone-300 hover:border-stone-500"
+          title="Open the worldbuilder"
+        >
+          Edit map
+        </a>
         <span className="text-xs text-stone-500">
           {users.length === 0
             ? "no devs online"
