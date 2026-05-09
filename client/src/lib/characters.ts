@@ -14,6 +14,8 @@ export type Character = {
   color: string;
   shortBio: string;
   systemPrompt: string;
+  skill?: string;
+  custom?: boolean;
 };
 
 function parseFrontmatter(raw: string): { data: Record<string, string>; body: string } {

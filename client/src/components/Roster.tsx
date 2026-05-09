@@ -7,6 +7,7 @@ type Props = {
   onSelect: (id: string) => void;
   onDescribeTask?: () => void;
   onBeginDrag?: (id: string) => void;
+  onCreateAvatar?: () => void;
   disabled?: boolean;
 };
 
@@ -16,6 +17,7 @@ export default function Roster({
   onSelect,
   onDescribeTask,
   onBeginDrag,
+  onCreateAvatar,
   disabled,
 }: Props) {
   const selectedCharacter = characters.find((c) => c.id === selectedCharacterId) ?? null;
@@ -48,6 +50,18 @@ export default function Roster({
           />
         ))}
       </div>
+
+      <button
+        type="button"
+        onClick={onCreateAvatar}
+        disabled={!onCreateAvatar}
+        className="mt-1 rounded-lg border border-dashed border-cyan-200/20 bg-cyan-300/5 px-3 py-2 text-left text-xs font-semibold text-cyan-100 transition duration-200 hover:-translate-y-0.5 hover:border-cyan-200/35 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        + Create avatar
+        <span className="mt-0.5 block text-[10px] font-normal text-stone-500">
+          Choose a skill, role, and color
+        </span>
+      </button>
 
       <div className="mt-auto px-1 pt-3">
         {selectedCharacter ? (

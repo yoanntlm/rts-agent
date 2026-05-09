@@ -7,14 +7,22 @@ import Roster from "./components/Roster";
 import World from "./components/World";
 import Inspector from "./components/Inspector";
 import SpawnModal from "./components/SpawnModal";
+import CreateAvatarModal from "./components/CreateAvatarModal";
 import { CHARACTERS, getCharacter } from "./lib/characters";
+import {
+  loadCustomCharacters,
+  saveCustomCharacters,
+} from "./lib/customCharacters";
 import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
+import type { Character } from "./lib/characters";
 
 const ROOM_NAME = "demo";
 
 export default function ConnectedApp() {
   const identity = useMemo(() => getOrCreateIdentity(), []);
+  const [customCharacters, setCustomCharacters] = useState<Character[]>(() => loadCustomCharacters());
+  const characters = useMemo(() => [...CHARACTERS, ...customCharacters], [customCharacters]);
 
   const getOrCreateRoom = useMutation(api.rooms.getOrCreate);
   const joinRoom = useMutation(api.users.join);
@@ -68,6 +76,7 @@ export default function ConnectedApp() {
 
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [spawnCharacterId, setSpawnCharacterId] = useState<string | null>(null);
+  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
   const [spawnPosition, setSpawnPosition] = useState<{ x: number; y: number } | null>(null);
   const [dragCharacterId, setDragCharacterId] = useState<string | null>(null);
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
@@ -79,7 +88,7 @@ export default function ConnectedApp() {
 
   const handleSpawn = async (task: string, name?: string) => {
     if (!roomId || !userId || !spawnCharacterId) return;
-    const character = getCharacter(spawnCharacterId);
+    const character = characters.find((c) => c.id === spawnCharacterId) ?? getCharacter(spawnCharacterId);
     if (!character) return;
     setIsSpawning(true);
     setAppError(null);
@@ -122,7 +131,17 @@ export default function ConnectedApp() {
   };
 
   const selectedAgent = agents?.find((a) => a._id === selectedAgentId) ?? null;
-  const dragCharacter = dragCharacterId ? getCharacter(dragCharacterId) : null;
+  const dragCharacter = dragCharacterId ? characters.find((c) => c.id === dragCharacterId) : null;
+
+  const addCustomCharacter = (character: Character) => {
+    setCustomCharacters((current) => {
+      const next = [...current, character];
+      saveCustomCharacters(next);
+      return next;
+    });
+    setSelectedCharacterId(character.id);
+    setShowAvatarCreator(false);
+  };
 
   useEffect(() => {
     if (!dragCharacterId) return;
@@ -174,7 +193,7 @@ export default function ConnectedApp() {
         }
         roster={
           <Roster
-            characters={CHARACTERS}
+            characters={characters}
             selectedCharacterId={selectedCharacterId}
             onSelect={setSelectedCharacterId}
             onDescribeTask={() => {
@@ -187,6 +206,7 @@ export default function ConnectedApp() {
               setSelectedCharacterId(id);
               setDragCharacterId(id);
             }}
+            onCreateAvatar={() => setShowAvatarCreator(true)}
             disabled={!roomId || !userId}
           />
         }
@@ -230,13 +250,19 @@ export default function ConnectedApp() {
       />
       {spawnCharacterId && (
         <SpawnModal
-          character={getCharacter(spawnCharacterId)!}
+          character={characters.find((c) => c.id === spawnCharacterId)!}
           onClose={() => {
             setSpawnCharacterId(null);
             setSpawnPosition(null);
           }}
           onSubmit={handleSpawn}
           isSubmitting={isSpawning}
+        />
+      )}
+      {showAvatarCreator && (
+        <CreateAvatarModal
+          onClose={() => setShowAvatarCreator(false)}
+          onCreate={addCustomCharacter}
         />
       )}
       {dragCharacter && dragPoint && (
