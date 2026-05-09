@@ -1,12 +1,12 @@
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrthographicCamera } from "@react-three/drei";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { AgentView, RoomMap } from "../lib/types";
-import { workshopAnchors } from "../lib/workshopAnchors";
 import Tilemap from "./world/Tilemap";
 import AgentSprite from "./world/AgentSprite";
 import BuildingSprite from "./world/BuildingSprite";
+import MonumentSprite from "./world/MonumentSprite";
 
 const MIN_ZOOM = 12;
 const MAX_ZOOM = 120;
@@ -53,8 +53,6 @@ export default function World({
   const occupied = new Set(agents.map((agent) => `${agent.position.x},${agent.position.y}`));
   const placing = Boolean(placementColor && onPlaceAgent);
   const canPlace = isBuildableTile(hoverTile, mapSize, occupied);
-  const workshopTiles = useMemo(() => workshopAnchors(mapSize), [mapSize.width, mapSize.height]);
-
   // Recenter when the room's map size changes (rare — only on first mount or
   // if the room doc updates).
   useEffect(() => {
@@ -84,19 +82,6 @@ export default function World({
         <ViewportClamp onChange={setView} mapSize={mapSize} />
         <ambientLight intensity={1} />
         <Tilemap width={mapSize.width} height={mapSize.height} tiles={mapSize.tiles} />
-        {workshopTiles.map((p, i) => (
-          <group key={i} position={[p.x + 0.5, p.y + 0.5, 0.055]}>
-            <mesh>
-              <ringGeometry args={[0.36, 0.46, 36]} />
-              <meshBasicMaterial
-                color="#f59e0b"
-                transparent
-                opacity={0.24}
-                depthWrite={false}
-              />
-            </mesh>
-          </group>
-        ))}
         {placing && (
           <mesh
             position={[mapSize.width / 2, mapSize.height / 2, 0.09]}
@@ -138,31 +123,54 @@ export default function World({
             </mesh>
           </group>
         )}
-        {/* Construction sites — render at the workshop anchor (= destination
-            shifted 2 tiles north, since destination is the standing tile in
-            front of the building). Stays on while the agent is working so
-            the world reads as "this agent is building something here". */}
+        {/* Workshop tile — animated construction site while building, swapped
+            for a finished Singapore landmark image once the user clicks
+            "Finish task". Anchor is `workshopTile` on the doc; for legacy
+            rows we fall back to (destination.x, destination.y + 2). */}
         {agents.map((agent) => {
-          if (!agent.destination) return null;
+          const anchor =
+            agent.workshopTile ??
+            (agent.destination
+              ? { x: agent.destination.x, y: agent.destination.y + 2 }
+              : null);
+          if (!anchor) return null;
+          if (agent.monumentImage) {
+            return (
+              <MonumentSprite
+                key={`monument-${agent.id}`}
+                src={agent.monumentImage}
+                position={anchor}
+              />
+            );
+          }
           return (
             <BuildingSprite
               key={`construction-${agent.id}`}
               name="construction-zone-3x3"
-              position={{
-                x: agent.destination.x,
-                y: agent.destination.y + 2,
-              }}
+              position={anchor}
             />
           );
         })}
-        {agents.map((agent) => (
-          <AgentSprite
-            key={agent.id}
-            agent={agent}
-            selected={agent.id === selectedAgentId}
-            onClick={() => onSelectAgent(agent.id)}
-          />
-        ))}
+        {agents.map((agent) => {
+          // Once a finished agent has walked back to its home tile, drop the
+          // sprite entirely — the monument stays, the agent is "gone".
+          if (
+            agent.monumentImage &&
+            agent.destination &&
+            agent.position.x === agent.destination.x &&
+            agent.position.y === agent.destination.y
+          ) {
+            return null;
+          }
+          return (
+            <AgentSprite
+              key={agent.id}
+              agent={agent}
+              selected={agent.id === selectedAgentId}
+              onClick={() => onSelectAgent(agent.id)}
+            />
+          );
+        })}
       </Canvas>
 
       {agents.length === 0 && (

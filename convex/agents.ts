@@ -34,6 +34,7 @@ export const spawn = mutation({
     systemPrompt: v.optional(v.string()),
     position: v.object({ x: v.number(), y: v.number() }),
     destination: v.optional(v.object({ x: v.number(), y: v.number() })),
+    workshopTile: v.optional(v.object({ x: v.number(), y: v.number() })),
     task: v.string(),
   },
   handler: async (ctx, args) => {
@@ -42,6 +43,27 @@ export const spawn = mutation({
       ...args,
       status: "idle",
       lastActivityAt: now,
+    });
+  },
+});
+
+// Marks the agent's task as done: swaps the active construction site for a
+// finished monument image and redirects the agent's destination to a home
+// tile off the south edge. The client walks the agent there step by step.
+export const finishTask = mutation({
+  args: {
+    agentId: v.id("agents"),
+    monumentImage: v.string(),
+    homeTile: v.object({ x: v.number(), y: v.number() }),
+  },
+  handler: async (ctx, { agentId, monumentImage, homeTile }) => {
+    const agent = await ctx.db.get(agentId);
+    if (!agent) return;
+    await ctx.db.patch(agentId, {
+      monumentImage,
+      destination: homeTile,
+      status: "done",
+      lastActivityAt: Date.now(),
     });
   },
 });

@@ -13,6 +13,8 @@ export type AgentView = {
   color: string;
   position: { x: number; y: number };
   destination?: { x: number; y: number };
+  workshopTile?: { x: number; y: number };
+  monumentImage?: string;
   status: AgentStatus;
   task: string;
   progress?: number;

@@ -14,6 +14,7 @@ type Props = {
   agent: AgentView | null;
   transcript: TranscriptEntry[];
   onSendMessage: (text: string) => void | Promise<void>;
+  onFinishTask?: () => void | Promise<void>;
   disabled?: boolean;
   sendPending?: boolean;
 };
@@ -60,6 +61,7 @@ export default function Inspector({
   agent,
   transcript,
   onSendMessage,
+  onFinishTask,
   disabled,
   sendPending,
 }: Props) {
@@ -158,6 +160,15 @@ export default function Inspector({
             <span className="text-ink-soft">Live: </span>
             <span className="break-words">{agent.lastMessage}</span>
           </div>
+        ) : null}
+        {onFinishTask && !agent.monumentImage ? (
+          <button
+            type="button"
+            onClick={() => void onFinishTask()}
+            className="mt-3 w-full rounded-md border border-emerald-700/40 bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:border-emerald-700/70 hover:bg-emerald-200"
+          >
+            ✓ Finish task — send agent home
+          </button>
         ) : null}
       </header>
 

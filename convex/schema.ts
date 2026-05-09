@@ -40,12 +40,16 @@ export default defineSchema({
     color: v.string(),
     systemPrompt: v.optional(v.string()),
     position: v.object({ x: v.number(), y: v.number() }),
-    // The tile the agent is walking toward, set at spawn time. The
-    // agent-runner steps `position` toward this each tick. While position !=
-    // destination, the construction site is rendered at the workshop anchor
-    // (= destination shifted 2 tiles north) so the agent appears to walk up
-    // to a building site, stop just south of it, and start working.
+    // The tile the agent is walking toward. At spawn time it's the standing
+    // tile in front of the workshop; on finishTask it's swapped for a "home"
+    // tile off the south edge so the agent walks back out of view.
     destination: v.optional(v.object({ x: v.number(), y: v.number() })),
+    // The 3×3 building anchor — set once at spawn and never changes. The
+    // construction site (or monument, after finishTask) renders here.
+    workshopTile: v.optional(v.object({ x: v.number(), y: v.number() })),
+    // Set by finishTask: path to a Singapore landmark image (in
+    // /assets/tiles/) that replaces the construction site.
+    monumentImage: v.optional(v.string()),
     status: v.union(
       v.literal("idle"),
       v.literal("working"),

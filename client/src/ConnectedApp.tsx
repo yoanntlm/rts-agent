@@ -15,7 +15,8 @@ import { loadCustomCharacters, saveCustomCharacters } from "./lib/customCharacte
 import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
 import type { Character } from "./lib/characters";
-import { workshopAnchors, nearestAnchor } from "./lib/workshopAnchors";
+import { workshopAnchors, nearestAnchor, stepToward } from "./lib/workshopAnchors";
+import { pickRandomMonument } from "./lib/monuments";
 
 const MAP_SIZE = { width: 48, height: 32 };
 
@@ -108,6 +109,8 @@ export default function ConnectedApp({ roomName }: Props) {
   const [appError, setAppError] = useState<string | null>(null);
   const spawnAgent = useMutation(api.agents.spawn);
   const sendMessage = useMutation(api.transcript.userMessage);
+  const finishTask = useMutation(api.agents.finishTask);
+  const updateAgent = useMutation(api.agents.update);
 
   // Destinations this client has just submitted but may not yet appear in the
   // `agents` query snapshot. Without this, back-to-back spawns race the
@@ -129,6 +132,10 @@ export default function ConnectedApp({ roomName }: Props) {
 
       const entry = pickEntryTile(mapSize);
       const destination = pickDestination(entry, mapSize, occupiedDestinations);
+      // The 3×3 construction site / future monument lives 2 tiles north of
+      // the standing tile. Persisted on the doc so it stays put even after
+      // finishTask swaps `destination` for the home tile.
+      const workshopTile = { x: destination.x, y: destination.y + 2 };
       const destKey = `${destination.x},${destination.y}`;
       inFlightDestinationsRef.current.add(destKey);
       const agentId = (await spawnAgent({
@@ -141,6 +148,7 @@ export default function ConnectedApp({ roomName }: Props) {
         systemPrompt: character.systemPrompt,
         position: entry,
         destination,
+        workshopTile,
         task,
       })) as Id<"agents">;
       setSelectedAgentId(agentId);
@@ -152,6 +160,45 @@ export default function ConnectedApp({ roomName }: Props) {
       setIsSpawning(false);
     }
   };
+
+  const handleFinishTask = async () => {
+    if (!selectedAgentId) return;
+    const agent = agents?.find((a) => a._id === selectedAgentId);
+    if (!agent) return;
+    // Send the agent home — one row off the south edge of the map so the
+    // camera clamp keeps them out of view once they arrive. Walk x is held
+    // at the workshop x to give a clean straight retreat.
+    const homeX = agent.workshopTile?.x ?? agent.position.x;
+    const homeTile = { x: homeX, y: -1 };
+    try {
+      await finishTask({
+        agentId: agent._id,
+        monumentImage: pickRandomMonument(),
+        homeTile,
+      });
+    } catch (err) {
+      setAppError(err instanceof Error ? err.message : "Failed to finish task.");
+    }
+  };
+
+  // Walk finished agents home, one tile per tick. Uses the same stepToward
+  // approach the agent-runner uses during the spawn-arrival walk; here it
+  // runs on the client because the runner's walker has long since cleared.
+  useEffect(() => {
+    if (!agents || agents.length === 0) return;
+    const handle = window.setInterval(() => {
+      for (const a of agents) {
+        if (!a.monumentImage || !a.destination) continue;
+        if (a.position.x === a.destination.x && a.position.y === a.destination.y) continue;
+        const next = stepToward(
+          { x: Math.round(a.position.x), y: Math.round(a.position.y) },
+          { x: a.destination.x, y: a.destination.y },
+        );
+        updateAgent({ agentId: a._id, position: next }).catch(() => {});
+      }
+    }, 400);
+    return () => window.clearInterval(handle);
+  }, [agents, updateAgent]);
 
   const handleSendMessage = async (text: string) => {
     if (!selectedAgentId || !userId || !text.trim()) return;
@@ -242,6 +289,7 @@ export default function ConnectedApp({ roomName }: Props) {
               userId: t.userId ?? null,
             }))}
             onSendMessage={handleSendMessage}
+            onFinishTask={handleFinishTask}
             sendPending={sendPending}
           />
         }
@@ -310,6 +358,8 @@ type AgentRow = {
   color: string;
   position: { x: number; y: number };
   destination?: { x: number; y: number };
+  workshopTile?: { x: number; y: number };
+  monumentImage?: string;
   status: "idle" | "working" | "stuck" | "done" | "error";
   task: string;
   progress?: number;
@@ -340,6 +390,8 @@ function toAgentView(a: AgentRow): AgentView {
     color: a.color,
     position: a.position,
     destination: a.destination,
+    workshopTile: a.workshopTile,
+    monumentImage: a.monumentImage,
     status: a.status,
     task: a.task,
     progress: a.progress,

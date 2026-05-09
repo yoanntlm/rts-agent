@@ -5,12 +5,14 @@ import App from "./App";
 import Editor from "./components/editor/Editor";
 import Playground from "./components/playground/Playground";
 import Preview from "./components/preview/Preview";
+import Anchors from "./components/anchors/Anchors";
 import "./index.css";
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 const path = window.location.pathname.replace(/\/$/, "");
 const isPlayground = path === "/playground";
 const isPreview = path === "/preview";
+const isAnchors = path === "/anchors";
 const editorRoomMatch = path.match(/^\/r\/([a-z0-9]{1,32})\/editor$/i);
 const isEditor = path === "/editor" || Boolean(editorRoomMatch);
 
@@ -49,6 +51,14 @@ if (isPlayground) {
   root.render(
     <React.StrictMode>
       <Playground />
+    </React.StrictMode>,
+  );
+} else if (isAnchors) {
+  // Workshop-anchor picker: click 10 tiles, copy array → paste into
+  // workshopAnchors.ts to relocate construction sites.
+  root.render(
+    <React.StrictMode>
+      <Anchors />
     </React.StrictMode>,
   );
 } else if (isPreview) {
