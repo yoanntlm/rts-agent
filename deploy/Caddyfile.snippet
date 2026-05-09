@@ -19,9 +19,14 @@ citybuilder.yoanntlm.com {
         file_server
     }
 
-    @assets path /assets/*
-    header @assets Cache-Control "public, max-age=31536000, immutable"
-    header /index.html Cache-Control "no-cache"
+    # Vite-fingerprinted bundles (hash in filename) — safe to cache forever.
+    @hashed path_regexp ^/assets/.+-[A-Za-z0-9_-]{6,}\.(js|css|woff2?)$
+    header @hashed Cache-Control "public, max-age=31536000, immutable"
+
+    # Everything else (tiles, chars, html, JSON, …) — always revalidate via ETag.
+    # Browser keeps the copy and only re-downloads if ETag changed (304 otherwise).
+    @revalidate not path_regexp ^/assets/.+-[A-Za-z0-9_-]{6,}\.(js|css|woff2?)$
+    header @revalidate Cache-Control "no-cache"
 
     log {
         output file /var/log/caddy/citybuilder.log

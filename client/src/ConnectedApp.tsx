@@ -16,7 +16,7 @@ import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
 import type { Character } from "./lib/characters";
 import { workshopAnchors, nearestAnchor, stepToward } from "./lib/workshopAnchors";
-import { pickRandomMonument } from "./lib/monuments";
+import { pickMonument } from "./lib/monuments";
 
 const MAP_SIZE = { width: 48, height: 32 };
 
@@ -116,6 +116,10 @@ export default function ConnectedApp({ roomName }: Props) {
   // `agents` query snapshot. Without this, back-to-back spawns race the
   // Convex subscription and pick the same workshop slot.
   const inFlightDestinationsRef = useRef<Set<string>>(new Set());
+  // Same idea for finishTask: how many monuments this client has just
+  // submitted but Convex may not yet show. Bumps the index so back-to-back
+  // finishes don't both grab the same hardcoded slot (e.g. two MBS1s).
+  const inFlightFinishesRef = useRef(0);
 
   const handleSpawn = async (characterId: string, task: string, name?: string) => {
     if (!roomId || !userId) return;
@@ -170,14 +174,23 @@ export default function ConnectedApp({ roomName }: Props) {
     // at the workshop x to give a clean straight retreat.
     const homeX = agent.workshopTile?.x ?? agent.position.x;
     const homeTile = { x: homeX, y: -1 };
+    // Curated 1st..5th, random after. Visible-finished count + in-flight
+    // pending finishes gives a stable index across rapid clicks.
+    const completedCount =
+      (agents ?? []).filter((a) => a.monumentImage).length +
+      inFlightFinishesRef.current;
+    const monumentImage = pickMonument(completedCount);
+    inFlightFinishesRef.current += 1;
     try {
       await finishTask({
         agentId: agent._id,
-        monumentImage: pickRandomMonument(),
+        monumentImage,
         homeTile,
       });
     } catch (err) {
       setAppError(err instanceof Error ? err.message : "Failed to finish task.");
+    } finally {
+      inFlightFinishesRef.current = Math.max(0, inFlightFinishesRef.current - 1);
     }
   };
 
