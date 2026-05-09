@@ -1,0 +1,12 @@
+{
+  "name": "construction-zone-3x3",
+  "source": "construction-zone-3x3.png",
+  "frameCount": 6,
+  "frameWidth": 1024,
+  "frameHeight": 1024,
+  "sheetWidth": 6144,
+  "sheetHeight": 1024,
+  "suggestedFps": 4,
+  "loop": true,
+  "createdAt": "2026-05-09T05:55:25.095Z"
+}
