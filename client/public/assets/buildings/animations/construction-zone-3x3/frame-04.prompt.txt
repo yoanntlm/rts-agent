@@ -1,0 +1,35 @@
+This is FRAME 4 of 6 in a looping animation of a
+"construction-zone-3x3" — a Singapore HDB-style construction site rendered in cozy
+pixel-art Stardew Valley style. The reference image you've been given is
+the canonical scene.
+
+KEEP EXACTLY IDENTICAL to the reference image:
+- The blue-and-white corrugated hoarding fence around the entire perimeter
+  (with yellow-and-black warning stripes along the top edge).
+- The ochre construction-dirt ground texture, including all tire tracks
+  and gravel patches.
+- The yellow tower crane's TOWER (the upright structure in the upper-left
+  corner) and its horizontal jib arm position — the jib does NOT rotate.
+- All material piles in their current positions: rebar bundles top-right,
+  brick stack right, construction-mesh roll left, sandbag pile bottom-left.
+- The two orange traffic cones (bottom center) and the yellow caution sign
+  (bottom-right).
+- Camera angle, lighting, palette, pixel-art technique, frame composition.
+- Image size and aspect ratio.
+
+CHANGE ONLY the following from the reference (this frame's specific motion):
+
+The yellow-and-orange caterpillar excavator's BUCKET is now LIFTED back
+toward the cab with a SMALL VISIBLE DIRT LOAD heaped inside the bucket
+(loose dirt visible above the rim). A LIGHT DUST TRAIL follows behind
+the bucket's path. The crane's CABLE HOOK is LOW, cable nearly fully
+extended.
+
+Output rules: same 1024x1024 frame, same composition, edge-to-edge fence.
+Do not redesign the scene, do not add new objects beyond the listed
+changes, do not move material piles or signs. The animation depends on
+everything except the listed changes staying still.
+
+EXPLICITLY AVOID: changing the crane jib direction, moving the material
+piles, adding workers/people, changing the perimeter fence pattern,
+showing sky, changing the camera angle.

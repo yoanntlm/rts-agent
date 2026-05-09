@@ -1,8 +1,9 @@
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { AgentView } from "../../lib/types";
+import { getCharacter } from "../../lib/characters";
 
 type Props = {
   agent: AgentView;
@@ -14,6 +15,73 @@ const BODY_FILL = new THREE.Color("#15110f");
 const ERROR_RED = new THREE.Color("#ef4444");
 const STUCK_YELLOW = "#facc15";
 const PI2 = Math.PI * 2;
+
+// White = no tint (texture renders true). Stuck = grey wash for desaturation.
+// Error flash is handled separately in useFrame.
+const TINT_NORMAL = new THREE.Color("#ffffff");
+const TINT_STUCK = new THREE.Color("#888888");
+
+// ---------- Avatar texture loading -------------------------------------------
+//
+// Module-level cache so multiple agents sharing the same character icon
+// (e.g. several frontend agents in one room) only fetch + decode once.
+
+const TEXTURE_CACHE = new Map<string, THREE.Texture>();
+const PENDING_LOADS = new Map<string, Promise<THREE.Texture>>();
+
+function loadAgentTexture(url: string): Promise<THREE.Texture> {
+  const cached = TEXTURE_CACHE.get(url);
+  if (cached) return Promise.resolve(cached);
+  const pending = PENDING_LOADS.get(url);
+  if (pending) return pending;
+
+  const loader = new THREE.TextureLoader();
+  const promise = new Promise<THREE.Texture>((resolve, reject) => {
+    loader.load(
+      url,
+      (tex) => {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        TEXTURE_CACHE.set(url, tex);
+        PENDING_LOADS.delete(url);
+        resolve(tex);
+      },
+      undefined,
+      (err) => {
+        PENDING_LOADS.delete(url);
+        reject(err);
+      },
+    );
+  });
+  PENDING_LOADS.set(url, promise);
+  return promise;
+}
+
+function useAgentTexture(url: string | null): THREE.Texture | null {
+  const [tex, setTex] = useState<THREE.Texture | null>(() =>
+    url ? TEXTURE_CACHE.get(url) ?? null : null,
+  );
+  useEffect(() => {
+    if (!url) {
+      setTex(null);
+      return;
+    }
+    let cancelled = false;
+    loadAgentTexture(url)
+      .then((t) => {
+        if (!cancelled) setTex(t);
+      })
+      .catch(() => {
+        if (!cancelled) setTex(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  return tex;
+}
 
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -49,13 +117,24 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
   const trailArc = Math.min(progressArc, PI2 * 0.18);
   const trailStart = Math.max(0, progressArc - trailArc);
   const ringColor = useMemo(() => new THREE.Color(agent.color), [agent.color]);
-  const bodyColor = useMemo(
-    () =>
-      agent.status === "stuck"
-        ? desaturate(agent.color, 0.4).multiplyScalar(0.55)
-        : BODY_FILL.clone(),
-    [agent.color, agent.status],
-  );
+
+  // Resolve avatar URL: agent.sprite (carried through from spawn) → character
+  // preset icon → null (fall through to colored-circle rendering).
+  const spriteUrl =
+    agent.sprite || getCharacter(agent.characterId)?.icon || null;
+  const texture = useAgentTexture(spriteUrl);
+  const isTextured = texture !== null;
+
+  const bodyColor = useMemo(() => {
+    if (isTextured) {
+      // Tint for textured avatars — white means texture renders true colors.
+      return agent.status === "stuck" ? TINT_STUCK.clone() : TINT_NORMAL.clone();
+    }
+    // Fallback flat-circle rendering: keep the old desaturated/dark logic.
+    return agent.status === "stuck"
+      ? desaturate(agent.color, 0.4).multiplyScalar(0.55)
+      : BODY_FILL.clone();
+  }, [agent.color, agent.status, isTextured]);
 
   const sparkleAngles = useMemo(
     () => Array.from({ length: 6 }, (_, i) => (i / 6) * PI2 + (i % 2) * 0.22),
@@ -153,15 +232,17 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
         document.body.style.cursor = "auto";
       }}
     >
-      {/* Drop shadow */}
-      <mesh position={[0.05, -0.07, -0.05]}>
-        <circleGeometry args={[0.42, 40]} />
+      {/* Ground shadow — soft squashed ellipse at the feet, sits below
+          everything else on z and is visible through the avatar's transparent
+          edges where the character silhouette ends. */}
+      <mesh position={[0.04, -0.36, -0.05]} scale={[1, 0.32, 1]}>
+        <circleGeometry args={[0.32, 40]} />
         <meshBasicMaterial color="#020617" transparent opacity={0.48} depthWrite={false} />
       </mesh>
 
       {selected && (
         <mesh position={[0, 0, -0.02]}>
-          <ringGeometry args={[0.53, 0.65, 56]} />
+          <ringGeometry args={[0.72, 0.84, 56]} />
           <meshBasicMaterial
             ref={selectedMaterialRef}
             color={agent.color}
@@ -172,20 +253,38 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
         </mesh>
       )}
 
-      <mesh position={[0, 0, 0.01]}>
-        <ringGeometry args={[0.35, 0.45, 48]} />
-        <meshBasicMaterial ref={ringMaterialRef} color={agent.color} transparent />
+      {/* Colored ground halo — visible at the feet, mostly hidden behind the
+          character body. Acts as a faint colored accent on the tile. */}
+      <mesh position={[0, -0.36, 0.01]} rotation={[0, 0, 0]}>
+        <ringGeometry args={[0.18, 0.32, 48]} />
+        <meshBasicMaterial ref={ringMaterialRef} color={agent.color} transparent opacity={0.55} />
       </mesh>
 
-      <mesh position={[0, 0, 0.02]}>
-        <circleGeometry args={[0.35, 48]} />
-        <meshBasicMaterial ref={bodyMaterialRef} color={bodyColor} transparent />
-      </mesh>
+      {/* Body — avatar PNG when loaded, fallback colored circle otherwise. */}
+      {isTextured ? (
+        <mesh position={[0, 0, 0.02]}>
+          <planeGeometry args={[1.0, 1.0]} />
+          <meshBasicMaterial
+            ref={bodyMaterialRef}
+            map={texture ?? undefined}
+            color={bodyColor}
+            transparent
+            toneMapped={false}
+            alphaTest={0.05}
+            depthWrite={false}
+          />
+        </mesh>
+      ) : (
+        <mesh position={[0, 0, 0.02]}>
+          <circleGeometry args={[0.35, 48]} />
+          <meshBasicMaterial ref={bodyMaterialRef} color={bodyColor} transparent />
+        </mesh>
+      )}
 
       {agent.status === "working" && (
         <>
           <mesh position={[0, 0, 0.04]} rotation={[0, 0, -Math.PI / 2]}>
-            <ringGeometry args={[0.5, 0.56, 64, 1, 0, progressArc]} />
+            <ringGeometry args={[0.66, 0.72, 64, 1, 0, progressArc]} />
             <meshBasicMaterial
               ref={progressMaterialRef}
               color={agent.color}
@@ -195,7 +294,7 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
             />
           </mesh>
           <mesh position={[0, 0, 0.05]} rotation={[0, 0, -Math.PI / 2 + trailStart]}>
-            <ringGeometry args={[0.565, 0.62, 24, 1, 0, trailArc]} />
+            <ringGeometry args={[0.725, 0.78, 24, 1, 0, trailArc]} />
             <meshBasicMaterial
               ref={progressTrailMaterialRef}
               color="#ffffff"
