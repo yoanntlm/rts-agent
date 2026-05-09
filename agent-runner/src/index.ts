@@ -8,8 +8,10 @@
 
 import "dotenv/config";
 import { ConvexClient } from "convex/browser";
+import { Daytona } from "@daytonaio/sdk";
 import { api } from "@convex/_generated/api.js";
 import { runAgent } from "./lib/pi-runner.js";
+import { startFileServer } from "./lib/file-server.js";
 
 const CONVEX_URL = process.env.CONVEX_URL;
 if (!CONVEX_URL) {
@@ -21,6 +23,13 @@ const client = new ConvexClient(CONVEX_URL);
 const claimed = new Set<string>();
 
 console.log("[runner] connecting to", CONVEX_URL);
+
+// Start the read-only file server for the "View Project" UI panel.
+// Safe to start unconditionally — if no DAYTONA_API_KEY, endpoints return 503.
+const daytonaForFiles = process.env.DAYTONA_API_KEY
+  ? new Daytona({ apiKey: process.env.DAYTONA_API_KEY })
+  : null;
+startFileServer(daytonaForFiles, client);
 
 client.onUpdate(api.agents.listUnclaimed, {}, async (agents: any[]) => {
   for (const agent of agents) {

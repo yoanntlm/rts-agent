@@ -40,6 +40,7 @@ type AgentDoc = {
   characterId: string;
   systemPrompt?: string;
   position: { x: number; y: number };
+  destination?: { x: number; y: number };
 };
 
 const PROGRESS_TARGET_TOOL_CALLS = 8;
@@ -191,16 +192,29 @@ export async function runAgent(client: ConvexClient, agent: AgentDoc): Promise<v
         roomId: agent.roomId,
       })) as { map: { width: number; height: number } } | null;
       const map = roomDoc?.map ?? { width: 28, height: 20 };
-      const anchors = workshopAnchors(map);
       let walkPos = {
         x: Math.round(agent.position.x),
         y: Math.round(agent.position.y),
       };
-      const walkTarget = nearestAnchor(walkPos, anchors);
+      // Prefer the destination written at spawn (the standing tile in front
+      // of the construction site). Fall back to the nearest workshop anchor
+      // for any legacy agent rows that pre-date the destination field.
+      const walkTarget = agent.destination
+        ? {
+            x: Math.round(agent.destination.x),
+            y: Math.round(agent.destination.y),
+          }
+        : nearestAnchor(walkPos, workshopAnchors(map));
       walkTargetLabel = `(${walkTarget.x}, ${walkTarget.y})`;
       walkTimer = setInterval(() => {
         void (async () => {
-          if (walkPos.x === walkTarget.x && walkPos.y === walkTarget.y) return;
+          if (walkPos.x === walkTarget.x && walkPos.y === walkTarget.y) {
+            if (walkTimer) {
+              clearInterval(walkTimer);
+              walkTimer = null;
+            }
+            return;
+          }
           walkPos = stepToward(walkPos, walkTarget);
           await safeMutation(() =>
             client.mutation(api.agents.update, {
@@ -459,6 +473,17 @@ You have **bash, write, read, edit, ls, find, grep** — all running on a local 
         }
       }
 
+      // Stay alive to handle follow-up messages from the inspector. Without
+      // this, any message the user sends after the first prompt() resolves
+      // sits forever in undeliveredUserTurns. We poll for new user turns and
+      // re-prompt the same pi session so the conversation continues with full
+      // context, until 5 min of idle or the agent row is cancelled.
+      try {
+        await waitForFollowUps(client, agent._id, agent.name, session, sandbox);
+      } catch (err) {
+        console.error(`[runner] ${agent.name}: follow-up loop error:`, err);
+      }
+
       try {
         await session.dispose();
       } catch {}
@@ -524,6 +549,7 @@ async function getOrCreateRoomSandbox(
        (git init -q 2>/dev/null || true) && \
        git config user.email "agent@rts-agent.local" && \
        git config user.name "agent" && \
+       printf '%s\\n' 'node_modules/' '*.log' '.cache/' 'dist/' 'build/' '.env' '.env.*' > .gitignore && \
        (git add -A 2>/dev/null || true) && \
        (git commit -q -m "init" --allow-empty 2>/dev/null || true)`,
     );
@@ -644,6 +670,90 @@ async function safeMutation(fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
+// Keep the agent's pi session alive after the first prompt finishes so the
+// user can send follow-up messages from the inspector (e.g. "how do I preview
+// the frontend?" or "now add a delete endpoint"). Disposes when either:
+//   - FOLLOWUP_WINDOW_MS passes without any new user message, OR
+//   - the agent row disappears from Convex (cancel)
+const FOLLOWUP_WINDOW_MS = 5 * 60 * 1000;
+const FOLLOWUP_POLL_MS = 1500;
+
+async function waitForFollowUps(
+  client: ConvexClient,
+  agentId: AgentId,
+  agentName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: any,
+  sandbox: Sandbox | null,
+): Promise<void> {
+  let lastActivityAt = Date.now();
+
+  while (Date.now() - lastActivityAt < FOLLOWUP_WINDOW_MS) {
+    await new Promise((r) => setTimeout(r, FOLLOWUP_POLL_MS));
+
+    // Cancel? agent row deleted by agents.cancel mutation → bail.
+    const agentDoc = (await client.query(api.agents.get, { agentId })) as
+      | unknown
+      | null;
+    if (!agentDoc) {
+      console.log(`[runner] ${agentName}: agent row gone, ending follow-up loop`);
+      return;
+    }
+
+    const pending = (await client.query(api.transcript.undeliveredUserTurns, {
+      agentId,
+    })) as Array<{ _id: string; text: string }> | undefined;
+    if (!pending || pending.length === 0) continue;
+
+    const followUpText = pending.map((p) => p.text).join("\n\n");
+    console.log(
+      `[runner] ${agentName}: follow-up (${pending.length} message${pending.length === 1 ? "" : "s"}, ${followUpText.length}c)`,
+    );
+    for (const p of pending) {
+      await safeMutation(() =>
+        client.mutation(api.transcript.markDelivered, {
+          entryId: p._id as Id<"transcript">,
+        }),
+      );
+    }
+
+    await safeMutation(() =>
+      client.mutation(api.agents.update, { agentId, status: "working" }),
+    );
+
+    try {
+      await session.prompt(followUpText);
+    } catch (err) {
+      console.error(`[runner] ${agentName}: follow-up prompt threw:`, err);
+      return;
+    }
+
+    await safeMutation(() =>
+      client.mutation(api.agents.update, { agentId, status: "done", progress: 1 }),
+    );
+
+    if (sandbox) {
+      try {
+        const diff = await captureAgentDiff(sandbox, agentName);
+        if (diff) {
+          await safeMutation(() =>
+            client.mutation(api.transcript.append, {
+              agentId,
+              role: "system",
+              text: `📁 Changes by ${agentName}\n\n\`\`\`diff\n${diff}\n\`\`\``,
+            }),
+          );
+        }
+      } catch {}
+    }
+
+    lastActivityAt = Date.now();
+  }
+  console.log(
+    `[runner] ${agentName}: follow-up window expired, disposing session`,
+  );
+}
+
 // Stages all changes in /home/daytona/project, captures the diff against the
 // previous commit, then commits the agent's work as its own commit. Result is
 // posted to the transcript so the user can see exactly what changed.
@@ -660,14 +770,18 @@ async function captureAgentDiff(
     };
   }).process;
 
-  // Single shell call: stage, capture stat + diff (limited), then commit so
-  // the next agent starts from a clean base.
+  // Single shell call: stage, capture stat + diff (filtered to source files
+  // and capped), then commit so the next agent starts from a clean base.
+  // Pathspec is repeated for both --stat and the diff so node_modules /
+  // lockfiles never leak into either.
   const safeName = agentName.replace(/[^A-Za-z0-9 ._-]/g, "");
+  const PATHSPEC =
+    "'*.js' '*.ts' '*.tsx' '*.jsx' '*.html' '*.css' '*.scss' '*.py' '*.md' '*.sh' '*.yml' '*.yaml' '*.toml' 'package.json' ':(exclude)package-lock.json' ':(exclude)pnpm-lock.yaml' ':(exclude)yarn.lock' ':(exclude)node_modules/**'";
   const cmd = [
     "cd /home/daytona/project 2>/dev/null || exit 0",
     "git add -A 2>/dev/null || true",
-    'STAT=$(git diff --cached --stat HEAD 2>/dev/null | tail -n +1)',
-    `DIFF=$(git diff --cached HEAD --no-color -- '*.js' '*.ts' '*.tsx' '*.jsx' '*.html' '*.css' '*.scss' '*.py' '*.md' '*.json' '*.sh' '*.yml' '*.yaml' '*.toml' 2>/dev/null | head -c 6000)`,
+    `STAT=$(git diff --cached --stat HEAD -- ${PATHSPEC} 2>/dev/null)`,
+    `DIFF=$(git diff --cached HEAD --no-color -- ${PATHSPEC} 2>/dev/null | head -c 3000)`,
     `git commit -q -m "agent: ${safeName}" 2>/dev/null || true`,
     'if [ -n "$STAT" ]; then printf "%s\\n\\n%s" "$STAT" "$DIFF"; fi',
   ].join(" && ");

@@ -1,10 +1,11 @@
 // Sprite-sheet animator for buildings.
 //
-// Takes a finished building PNG (e.g. construction-zone-3x3.png), uses it as
-// a visual reference via openai.images.edit, and generates N frame variations
-// where ONLY specific moving parts change (excavator arm, crane hook, dust
-// puffs, etc.). Composites the frames into a horizontal sprite sheet and
-// writes a meta.json with frame size and suggested fps.
+// For fully stable loops, frames must not ask the image model to redraw the
+// whole scene independently. The construction-site animation therefore uses a
+// locked-base renderer: every frame starts from the exact source PNG pixels and
+// only composites deterministic dust / beacon effects on top. The older
+// image-edit path is still available for future animations where a little
+// redraw drift is acceptable.
 //
 // Output layout:
 //   client/public/assets/buildings/animations/<name>/
@@ -88,11 +89,15 @@ type Frame = {
   body: string;
 };
 
+type AnimationMode = "locked-base" | "ai-edit";
+
 type Animation = {
   /** identifier — also the folder name under animations/. */
   name: string;
   /** filename in BUILDINGS_DIR to use as the visual reference. */
   sourceFile: string;
+  /** Locked base is pixel-stable; ai-edit can redraw the scene. */
+  mode: AnimationMode;
   /** suggested frames-per-second for this loop. */
   fps: number;
   frames: Frame[];
@@ -102,6 +107,7 @@ const ANIMATIONS: Animation[] = [
   {
     name: "construction-zone-3x3",
     sourceFile: "construction-zone-3x3.png",
+    mode: "locked-base",
     fps: 4,
     frames: [
       {
@@ -193,6 +199,100 @@ async function fileExists(path: string) {
 }
 
 // ---------- Frame generation -------------------------------------------------
+
+function lockedBasePrompt(
+  animationName: string,
+  totalFrames: number,
+  frameIndex: number,
+  frame: Frame,
+) {
+  return [
+    `Deterministic locked-base frame ${frameIndex}/${totalFrames} for "${animationName}".`,
+    "The source building PNG is reused pixel-for-pixel as the base layer.",
+    "Only scripted overlay effects are composited above it, so the scene geometry, fence, dirt, machinery, and props stay exactly registered across every frame.",
+    "",
+    "Effect note:",
+    frame.body,
+  ].join("\n");
+}
+
+function rect(x: number, y: number, w: number, h: number, fill: string, opacity = 1) {
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" opacity="${opacity.toFixed(2)}"/>`;
+}
+
+function constructionOverlaySvg(frameIndex: number) {
+  const phases = [
+    { dust: 0.05, drift: 0, beacon: 0.4, hook: 0.25 },
+    { dust: 0.32, drift: 0, beacon: 0.75, hook: 0.45 },
+    { dust: 0.72, drift: 4, beacon: 1, hook: 0.7 },
+    { dust: 0.55, drift: 12, beacon: 0.65, hook: 0.5 },
+    { dust: 0.36, drift: 22, beacon: 0.35, hook: 0.35 },
+    { dust: 0.2, drift: 34, beacon: 0.85, hook: 0.55 },
+  ];
+  const phase = phases[(frameIndex - 1) % phases.length]!;
+  const dustAlpha = phase.dust;
+  const dx = phase.drift;
+  const dust = [
+    rect(369 + dx, 603, 20, 10, "#f1d193", dustAlpha * 0.72),
+    rect(392 + dx, 594, 28, 12, "#d39a55", dustAlpha * 0.66),
+    rect(414 + dx, 610, 18, 12, "#f6d99b", dustAlpha * 0.54),
+    rect(382 + dx, 626, 34, 10, "#9f6b32", dustAlpha * 0.34),
+    rect(436 + dx, 587, 12, 8, "#f1d193", dustAlpha * 0.42),
+    rect(350 + dx, 620, 14, 8, "#d39a55", dustAlpha * 0.3),
+  ];
+  const settle = dustAlpha > 0.5
+    ? [
+        rect(390 + dx, 642, 32, 8, "#8b5d2b", dustAlpha * 0.35),
+        rect(425 + dx, 637, 22, 7, "#7b5127", dustAlpha * 0.28),
+      ]
+    : [];
+
+  const beacon = [
+    rect(542, 384, 7, 7, "#ffef8a", phase.beacon),
+    rect(539, 387, 13, 3, "#ff9f1c", phase.beacon * 0.72),
+    rect(544, 382, 3, 13, "#ff9f1c", phase.beacon * 0.68),
+  ];
+
+  const hookGlint = [
+    rect(514, 241, 8, 5, "#ffe07a", phase.hook),
+    rect(518, 247, 4, 9, "#ffbf2f", phase.hook * 0.75),
+  ];
+
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" shape-rendering="crispEdges">
+  <g>${dust.join("")}${settle.join("")}</g>
+  <g>${beacon.join("")}</g>
+  <g>${hookGlint.join("")}</g>
+</svg>
+`.trim();
+}
+
+async function generateLockedBaseFrame(
+  animationName: string,
+  totalFrames: number,
+  frameIndex: number,
+  frame: Frame,
+  sourceBuffer: Buffer,
+  outDir: string,
+): Promise<{ id: string; path: string; status: "wrote" | "failed"; reason?: string }> {
+  const outPath = join(outDir, `${frame.id}.png`);
+  const prompt = lockedBasePrompt(animationName, totalFrames, frameIndex, frame);
+
+  console.log(`[${animationName}/${frame.id}] rendering locked-base frame…`);
+  try {
+    await sharp(sourceBuffer)
+      .composite([{ input: Buffer.from(constructionOverlaySvg(frameIndex)), left: 0, top: 0 }])
+      .png()
+      .toFile(outPath);
+    await writeFile(outPath.replace(/\.png$/, ".prompt.txt"), prompt + "\n");
+    console.log(`[${animationName}/${frame.id}] → ${outPath}`);
+    return { id: frame.id, path: outPath, status: "wrote" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[${animationName}/${frame.id}] FAILED: ${msg}`);
+    return { id: frame.id, path: outPath, status: "failed", reason: msg };
+  }
+}
 
 async function generateFrame(
   openai: OpenAI,
@@ -295,7 +395,7 @@ async function buildSpriteSheet(
 
 // ---------- Main -------------------------------------------------------------
 
-async function processOne(openai: OpenAI, anim: Animation, force: boolean) {
+async function processOne(openai: OpenAI | null, anim: Animation, force: boolean) {
   const outDir = join(ANIMATIONS_DIR, anim.name);
   const sheetPath = join(outDir, "sheet.png");
   if (!force && (await fileExists(sheetPath))) {
@@ -312,24 +412,43 @@ async function processOne(openai: OpenAI, anim: Animation, force: boolean) {
   const sourceBuffer = await readFile(sourcePath);
 
   console.log(
-    `[${anim.name}] generating ${anim.frames.length} frames at ${SIZE} ${QUALITY} (concurrency=${CONCURRENCY})`,
+    `[${anim.name}] generating ${anim.frames.length} frames in ${anim.mode} mode`,
   );
 
   const tasks = anim.frames.map((f, i) => ({ frame: f, index: i + 1 }));
-  const results = await runBatch(
-    tasks,
-    (t) =>
-      generateFrame(
-        openai,
-        anim.name,
-        anim.frames.length,
-        t.index,
-        t.frame,
-        sourceBuffer,
-        outDir,
-      ),
-    CONCURRENCY,
-  );
+  const results =
+    anim.mode === "locked-base"
+      ? await runBatch(
+          tasks,
+          (t) =>
+            generateLockedBaseFrame(
+              anim.name,
+              anim.frames.length,
+              t.index,
+              t.frame,
+              sourceBuffer,
+              outDir,
+            ),
+          CONCURRENCY,
+        )
+      : await runBatch(
+          tasks,
+          (t) => {
+            if (!openai) {
+              throw new Error("OPENAI_API_KEY required for ai-edit animations");
+            }
+            return generateFrame(
+              openai,
+              anim.name,
+              anim.frames.length,
+              t.index,
+              t.frame,
+              sourceBuffer,
+              outDir,
+            );
+          },
+          CONCURRENCY,
+        );
 
   const wrote = results.filter((r) => r.status === "wrote");
   const failed = results.filter((r) => r.status === "failed");
@@ -355,6 +474,8 @@ async function processOne(openai: OpenAI, anim: Animation, force: boolean) {
     sheetHeight: sheetMeta.height,
     suggestedFps: anim.fps,
     loop: true,
+    mode: anim.mode,
+    stableBase: anim.mode === "locked-base",
     createdAt: new Date().toISOString(),
   };
   await writeFile(join(outDir, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
@@ -363,18 +484,19 @@ async function processOne(openai: OpenAI, anim: Animation, force: boolean) {
 }
 
 async function main() {
-  if (!process.env.OPENAI_API_KEY) {
-    console.error("OPENAI_API_KEY not set. Copy .env.example to .env and fill it in.");
-    process.exit(1);
-  }
   const { force, only } = parseArgs(process.argv);
-  const openai = new OpenAI();
-
   const candidates = ANIMATIONS.filter((a) => (only ? only.has(a.name) : true));
   if (candidates.length === 0) {
     console.log("no animations match.");
     return;
   }
+
+  const needsOpenAI = candidates.some((a) => a.mode === "ai-edit");
+  if (needsOpenAI && !process.env.OPENAI_API_KEY) {
+    console.error("OPENAI_API_KEY not set. Copy .env.example to .env and fill it in.");
+    process.exit(1);
+  }
+  const openai = needsOpenAI ? new OpenAI() : null;
 
   for (const anim of candidates) {
     await processOne(openai, anim, force);

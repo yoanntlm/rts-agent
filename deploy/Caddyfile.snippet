@@ -5,10 +5,19 @@
 #   systemctl reload caddy
 
 citybuilder.yoanntlm.com {
-    root * /opt/rts-agent/client/dist
     encode gzip
-    try_files {path} /index.html
-    file_server
+
+    # Proxy the runner's read-only file API (sandbox file viewer).
+    handle /api/code/* {
+        reverse_proxy localhost:4000
+    }
+
+    # Static SPA: serve client/dist for everything else, fall back to index.html.
+    handle {
+        root * /opt/rts-agent/client/dist
+        try_files {path} /index.html
+        file_server
+    }
 
     @assets path /assets/*
     header @assets Cache-Control "public, max-age=31536000, immutable"

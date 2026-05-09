@@ -6,6 +6,7 @@ import type { AgentView, RoomMap } from "../lib/types";
 import { workshopAnchors } from "../lib/workshopAnchors";
 import Tilemap from "./world/Tilemap";
 import AgentSprite from "./world/AgentSprite";
+import BuildingSprite from "./world/BuildingSprite";
 
 const MIN_ZOOM = 12;
 const MAX_ZOOM = 120;
@@ -78,8 +79,9 @@ export default function World({
           near={0.1}
           far={1000}
         />
-        <WheelZoom onChange={setView} />
-        <DragPan onChange={setView} justPannedRef={justPannedRef} />
+        <WheelZoom onChange={setView} mapSize={mapSize} />
+        <DragPan onChange={setView} justPannedRef={justPannedRef} mapSize={mapSize} />
+        <ViewportClamp onChange={setView} mapSize={mapSize} />
         <ambientLight intensity={1} />
         <Tilemap width={mapSize.width} height={mapSize.height} tiles={mapSize.tiles} />
         {workshopTiles.map((p, i) => (
@@ -136,6 +138,28 @@ export default function World({
             </mesh>
           </group>
         )}
+        {/* Construction sites — render at the workshop anchor (= destination
+            shifted 2 tiles north, since destination is the standing tile in
+            front of the building) while the agent is still walking. Once
+            position == destination the agent has arrived in front of the
+            site, so hide it. */}
+        {agents.map((agent) => {
+          if (!agent.destination) return null;
+          const arrived =
+            agent.position.x === agent.destination.x &&
+            agent.position.y === agent.destination.y;
+          if (arrived) return null;
+          return (
+            <BuildingSprite
+              key={`construction-${agent.id}`}
+              name="construction-zone-3x3"
+              position={{
+                x: agent.destination.x,
+                y: agent.destination.y + 2,
+              }}
+            />
+          );
+        })}
         {agents.map((agent) => (
           <AgentSprite
             key={agent.id}
@@ -168,10 +192,50 @@ export default function World({
 type View = { x: number; y: number; zoom: number };
 type ViewSetter = React.Dispatch<React.SetStateAction<View>>;
 
+// Clamp zoom so the map always fills the viewport in both axes, and clamp x/y
+// so the visible rect stays inside the map (no overscroll past the edges).
+function clampView(
+  view: View,
+  map: RoomMap,
+  rect: { width: number; height: number },
+): View {
+  if (rect.width <= 0 || rect.height <= 0) return view;
+  const fitZoom = Math.max(rect.width / map.width, rect.height / map.height);
+  const minZoom = Math.max(MIN_ZOOM, fitZoom);
+  const zoom = Math.min(MAX_ZOOM, Math.max(minZoom, view.zoom));
+  const halfW = rect.width / (2 * zoom);
+  const halfH = rect.height / (2 * zoom);
+  // Guards against fp drift where halfW/H slightly exceeds map/2 at the fit zoom.
+  const x =
+    halfW * 2 >= map.width ? map.width / 2 : Math.min(Math.max(view.x, halfW), map.width - halfW);
+  const y =
+    halfH * 2 >= map.height ? map.height / 2 : Math.min(Math.max(view.y, halfH), map.height - halfH);
+  return { zoom, x, y };
+}
+
+// Re-applies clampView after the canvas mounts and whenever it resizes, so the
+// initial DEFAULT_ZOOM (or a stale view from a prior map size) is corrected.
+function ViewportClamp({ onChange, mapSize }: { onChange: ViewSetter; mapSize: RoomMap }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const apply = () => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      onChange((prev) => clampView(prev, mapSize, rect));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, [gl, onChange, mapSize]);
+  return null;
+}
+
 // Scroll-wheel + trackpad pinch zoom that anchors on the cursor's world point
 // so zooming in keeps whatever you're hovering centered. preventDefault stops
 // the browser from page-zooming when the cursor is over the canvas.
-function WheelZoom({ onChange }: { onChange: ViewSetter }) {
+function WheelZoom({ onChange, mapSize }: { onChange: ViewSetter; mapSize: RoomMap }) {
   const { gl } = useThree();
 
   useEffect(() => {
@@ -192,21 +256,22 @@ function WheelZoom({ onChange }: { onChange: ViewSetter }) {
       // Functional update so consecutive wheel ticks compose on the latest
       // accumulated state instead of all reading the original camera values.
       onChange((prev) => {
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev.zoom * factor));
+        const newZoom = prev.zoom * factor;
         // World point currently under the cursor — stays fixed across the zoom.
         const worldX = prev.x + (ndcX * rect.width) / (2 * prev.zoom);
         const worldY = prev.y + (ndcY * rect.height) / (2 * prev.zoom);
-        return {
+        const candidate = {
           zoom: newZoom,
           x: worldX - (ndcX * rect.width) / (2 * newZoom),
           y: worldY - (ndcY * rect.height) / (2 * newZoom),
         };
+        return clampView(candidate, mapSize, rect);
       });
     };
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [gl, onChange]);
+  }, [gl, onChange, mapSize]);
 
   return null;
 }
@@ -218,9 +283,11 @@ function WheelZoom({ onChange }: { onChange: ViewSetter }) {
 function DragPan({
   onChange,
   justPannedRef,
+  mapSize,
 }: {
   onChange: ViewSetter;
   justPannedRef: React.MutableRefObject<boolean>;
+  mapSize: RoomMap;
 }) {
   const { gl } = useThree();
 
@@ -259,13 +326,20 @@ function DragPan({
       const dy = e.clientY - lastY;
       lastX = e.clientX;
       lastY = e.clientY;
+      const rect = canvas.getBoundingClientRect();
       // Functional update — multiple pointermoves between renders compose
       // correctly. Three.js Y is up vs. screen Y down, hence the sign flip.
-      onChange((prev) => ({
-        x: prev.x - dx / prev.zoom,
-        y: prev.y + dy / prev.zoom,
-        zoom: prev.zoom,
-      }));
+      onChange((prev) =>
+        clampView(
+          {
+            x: prev.x - dx / prev.zoom,
+            y: prev.y + dy / prev.zoom,
+            zoom: prev.zoom,
+          },
+          mapSize,
+          rect,
+        ),
+      );
     };
 
     const onUp = () => {
@@ -293,7 +367,7 @@ function DragPan({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [gl, onChange, justPannedRef]);
+  }, [gl, onChange, justPannedRef, mapSize]);
 
   return null;
 }

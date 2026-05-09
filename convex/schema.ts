@@ -40,6 +40,12 @@ export default defineSchema({
     color: v.string(),
     systemPrompt: v.optional(v.string()),
     position: v.object({ x: v.number(), y: v.number() }),
+    // The tile the agent is walking toward, set at spawn time. The
+    // agent-runner steps `position` toward this each tick. While position !=
+    // destination, the construction site is rendered at the workshop anchor
+    // (= destination shifted 2 tiles north) so the agent appears to walk up
+    // to a building site, stop just south of it, and start working.
+    destination: v.optional(v.object({ x: v.number(), y: v.number() })),
     status: v.union(
       v.literal("idle"),
       v.literal("working"),

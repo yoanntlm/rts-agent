@@ -12,6 +12,7 @@ export type AgentView = {
   sprite?: string;
   color: string;
   position: { x: number; y: number };
+  destination?: { x: number; y: number };
   status: AgentStatus;
   task: string;
   progress?: number;

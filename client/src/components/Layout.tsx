@@ -10,7 +10,7 @@ type Props = {
 export default function Layout({ topBar, world, inspector, banner }: Props) {
   return (
     <div className="grid h-full w-full grid-cols-[1fr_360px] grid-rows-[48px_1fr] bg-cream text-ink">
-      <div className="relative col-span-2 border-b border-line bg-paper/85 backdrop-blur">
+      <div className="relative z-30 col-span-2 border-b border-line bg-paper/85 backdrop-blur">
         {topBar}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-amber-700/25 to-transparent" />
       </div>

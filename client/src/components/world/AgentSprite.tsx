@@ -312,7 +312,7 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
             <circleGeometry args={[0.18, 24]} />
             <meshBasicMaterial color="#17120a" transparent opacity={0.92} />
           </mesh>
-          <Html center transform position={[0, 0.01, 0.08]} distanceFactor={9}>
+          <Html center transform position={[0, 0.01, 0.08]} distanceFactor={9} zIndexRange={[10, 0]}>
             <div className="font-mono text-[10px] font-black leading-none text-yellow-300 drop-shadow">
               ?
             </div>
@@ -349,7 +349,7 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
             <circleGeometry args={[0.17, 24]} />
             <meshBasicMaterial color="#2b0808" transparent opacity={0.95} />
           </mesh>
-          <Html center transform position={[0, 0.01, 0.08]} distanceFactor={9}>
+          <Html center transform position={[0, 0.01, 0.08]} distanceFactor={9} zIndexRange={[10, 0]}>
             <div className="font-mono text-[10px] font-black leading-none text-red-300 drop-shadow">
               !
             </div>
@@ -358,7 +358,7 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
       )}
 
       {agent.lastMessage ? (
-        <Html center transform position={[0, 0.52, 0.08]} distanceFactor={7}>
+        <Html center transform position={[0, 0.52, 0.08]} distanceFactor={7} zIndexRange={[10, 0]}>
           <div
             className="pointer-events-none max-w-[148px] truncate rounded-md border px-1.5 py-0.5 font-mono text-[8px] leading-tight text-stone-100 shadow-lg shadow-black/40"
             style={{
@@ -372,7 +372,7 @@ export default function AgentSprite({ agent, selected, onClick }: Props) {
         </Html>
       ) : null}
 
-      <Html center transform position={[0, -0.62, 0.08]} distanceFactor={8}>
+      <Html center transform position={[0, -0.62, 0.08]} distanceFactor={8} zIndexRange={[10, 0]}>
         <div
           className="max-w-24 truncate rounded-full border border-stone-700/70 bg-stone-950/90 px-1.5 py-0.5 font-mono text-[8px] font-semibold shadow-lg shadow-black/40"
           style={{ color: agent.color }}

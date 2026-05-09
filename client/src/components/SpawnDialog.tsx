@@ -62,7 +62,7 @@ export default function SpawnDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-stone-900/40 p-4 backdrop-blur-sm"
       onClick={() => {
         if (!isSubmitting) onClose();
       }}

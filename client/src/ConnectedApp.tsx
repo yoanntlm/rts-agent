@@ -9,11 +9,13 @@ import Inspector from "./components/Inspector";
 import SpawnButton from "./components/SpawnButton";
 import SpawnDialog from "./components/SpawnDialog";
 import CreateAvatarModal from "./components/CreateAvatarModal";
+import CodePanel from "./components/CodePanel";
 import { CHARACTERS, getCharacter } from "./lib/characters";
 import { loadCustomCharacters, saveCustomCharacters } from "./lib/customCharacters";
 import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
 import type { Character } from "./lib/characters";
+import { workshopAnchors, nearestAnchor } from "./lib/workshopAnchors";
 
 const MAP_SIZE = { width: 48, height: 32 };
 
@@ -100,6 +102,7 @@ export default function ConnectedApp({ roomName }: Props) {
   // spawn dialog so it auto-advances to the task step with that avatar picked.
   const [pendingPickId, setPendingPickId] = useState<string | null>(null);
   const [showAvatarCreator, setShowAvatarCreator] = useState(false);
+  const [showCodePanel, setShowCodePanel] = useState(false);
   const [isSpawning, setIsSpawning] = useState(false);
   const [sendPending, setSendPending] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
@@ -113,7 +116,13 @@ export default function ConnectedApp({ roomName }: Props) {
     setIsSpawning(true);
     setAppError(null);
     try {
-      const occupied = new Set((agents ?? []).map((a) => `${a.position.x},${a.position.y}`));
+      const occupiedDestinations = new Set(
+        (agents ?? [])
+          .filter((a) => a.destination !== undefined)
+          .map((a) => `${a.destination!.x},${a.destination!.y}`),
+      );
+      const entry = pickEntryTile(mapSize);
+      const destination = pickDestination(entry, mapSize, occupiedDestinations);
       const agentId = (await spawnAgent({
         roomId,
         ownerUserId: userId,
@@ -122,7 +131,8 @@ export default function ConnectedApp({ roomName }: Props) {
         sprite: character.icon,
         color: character.color,
         systemPrompt: character.systemPrompt,
-        position: pickSpawnPosition(occupied, mapSize),
+        position: entry,
+        destination,
         task,
       })) as Id<"agents">;
       setSelectedAgentId(agentId);
@@ -249,6 +259,21 @@ export default function ConnectedApp({ roomName }: Props) {
           onCreate={addCustomCharacter}
         />
       )}
+      {/* Floating "View Project" trigger — opens a read-only sandbox file viewer.
+          Lives outside Layout to avoid touching teammate-owned components. */}
+      {roomId && (
+        <button
+          type="button"
+          onClick={() => setShowCodePanel(true)}
+          title="Browse the project files in the sandbox"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-4 py-2 text-xs font-semibold text-ink shadow-lg backdrop-blur transition hover:bg-paper-hover"
+        >
+          📁 View Project
+        </button>
+      )}
+      {showCodePanel && roomId && (
+        <CodePanel roomId={roomId} onClose={() => setShowCodePanel(false)} />
+      )}
     </>
   );
 }
@@ -262,6 +287,7 @@ type AgentRow = {
   sprite: string;
   color: string;
   position: { x: number; y: number };
+  destination?: { x: number; y: number };
   status: "idle" | "working" | "stuck" | "done" | "error";
   task: string;
   progress?: number;
@@ -291,6 +317,7 @@ function toAgentView(a: AgentRow): AgentView {
     sprite: a.sprite,
     color: a.color,
     position: a.position,
+    destination: a.destination,
     status: a.status,
     task: a.task,
     progress: a.progress,
@@ -300,17 +327,39 @@ function toAgentView(a: AgentRow): AgentView {
   };
 }
 
-function pickSpawnPosition(
+// Entry tile: south-edge midpoint with a small horizontal jitter, so multiple
+// concurrent spawns don't all overlap on the same tile.
+function pickEntryTile(map: {
+  width: number;
+  height: number;
+}): { x: number; y: number } {
+  const cx = Math.floor(map.width / 2);
+  const jitter = Math.floor(Math.random() * 5) - 2; // [-2..+2]
+  const x = Math.max(1, Math.min(map.width - 2, cx + jitter));
+  return { x, y: 1 };
+}
+
+// Pick the closest unoccupied workshop anchor and return the tile the agent
+// should STAND on — one row south of the anchor, just outside the 3×3
+// construction-site footprint. This way the building renders at the anchor
+// itself and the agent stops in front of it.
+function pickDestination(
+  from: { x: number; y: number },
+  map: { width: number; height: number },
   occupied: Set<string>,
+): { x: number; y: number } {
+  const anchors = workshopAnchors(map);
+  const standTiles = anchors.map((a) => clampTile({ x: a.x, y: a.y - 2 }, map));
+  const free = standTiles.filter((s) => !occupied.has(`${s.x},${s.y}`));
+  return nearestAnchor(from, free.length > 0 ? free : standTiles);
+}
+
+function clampTile(
+  p: { x: number; y: number },
   map: { width: number; height: number },
 ): { x: number; y: number } {
-  const opts: { x: number; y: number }[] = [];
-  for (let x = 1; x < map.width - 1; x++) {
-    for (let y = 1; y < map.height - 1; y++) {
-      const key = `${x},${y}`;
-      if (!occupied.has(key)) opts.push({ x, y });
-    }
-  }
-  if (opts.length === 0) return { x: 1, y: 1 };
-  return opts[Math.floor(Math.random() * opts.length)]!;
+  return {
+    x: Math.max(1, Math.min(map.width - 2, p.x)),
+    y: Math.max(1, Math.min(map.height - 2, p.y)),
+  };
 }

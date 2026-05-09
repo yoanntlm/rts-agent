@@ -33,6 +33,7 @@ export const spawn = mutation({
     color: v.string(),
     systemPrompt: v.optional(v.string()),
     position: v.object({ x: v.number(), y: v.number() }),
+    destination: v.optional(v.object({ x: v.number(), y: v.number() })),
     task: v.string(),
   },
   handler: async (ctx, args) => {
