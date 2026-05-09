@@ -1,0 +1,1 @@
+Seamless pixel water tile (sparkles, cyan-blue). Imported from chat. Use → tile to assign to a TileKind.
