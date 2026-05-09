@@ -33,7 +33,7 @@ export default function DisconnectedApp() {
   return (
     <>
       <Layout
-        topBar={<TopBar roomName="demo" users={[]} />}
+        topBar={<TopBar roomName="demo" users={[]} connectionStatus="disconnected" />}
         roster={
           <Roster
             characters={characters}

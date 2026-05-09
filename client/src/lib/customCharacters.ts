@@ -23,22 +23,46 @@ export const SKILL_PRESETS: SkillPreset[] = [
     promptFocus: "software architecture, implementation tradeoffs, and production-quality code",
   },
   {
+    id: "coding",
+    label: "Coding Specialist",
+    shortBio: "Feature work, refactors, bug fixes",
+    promptFocus: "writing, editing, and debugging code in an existing repository",
+  },
+  {
     id: "design",
     label: "Design",
     shortBio: "Product UX, UI polish, interaction design",
-    promptFocus: "product UX, visual hierarchy, accessibility, and interaction details",
+    promptFocus: "user experience, visual polish, interaction design, and product clarity",
+  },
+  {
+    id: "data",
+    label: "Data",
+    shortBio: "Analysis, metrics, data pipelines",
+    promptFocus: "data analysis, data modeling, metrics, and pipeline reliability",
+  },
+  {
+    id: "infrastructure",
+    label: "Infrastructure",
+    shortBio: "Deploys, CI, env, reliability",
+    promptFocus: "deployment, CI/CD, infrastructure reliability, and environment configuration",
   },
   {
     id: "testing",
     label: "Testing",
-    shortBio: "Repros, coverage, regression checks",
-    promptFocus: "bug reproduction, regression testing, and clear verification plans",
+    shortBio: "QA, repros, regression coverage",
+    promptFocus: "testing strategy, regression coverage, reproductions, and quality gates",
   },
   {
-    id: "ops",
-    label: "Ops",
-    shortBio: "Deploys, CI, infrastructure debugging",
-    promptFocus: "deployment, CI, observability, and operational reliability",
+    id: "security",
+    label: "Security",
+    shortBio: "Threat modeling, auth, secrets",
+    promptFocus: "security review, authentication, authorization, secret hygiene, and threat modeling",
+  },
+  {
+    id: "product",
+    label: "Product",
+    shortBio: "Specs, prioritization, acceptance criteria",
+    promptFocus: "product requirements, prioritization, acceptance criteria, and user outcomes",
   },
 ];
 
@@ -55,19 +79,21 @@ export const AVATAR_COLORS = [
 
 export function createCustomCharacter(input: CustomCharacterInput): Character {
   const skill = SKILL_PRESETS.find((preset) => preset.id === input.skillId) ?? SKILL_PRESETS[0]!;
-  const name = input.name.trim() || `${skill.label} Agent`;
-  const idBase = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  const id = `custom-${idBase || skill.id}-${Date.now().toString(36)}`;
+  const name = input.name.trim() || skill.label;
 
   return {
-    id,
+    id: `custom-${skill.id}-${Date.now()}`,
     name,
     icon: "",
     color: input.color,
-    shortBio: skill.shortBio,
-    skill: skill.label,
+    skill: skill.id,
     custom: true,
-    systemPrompt: `You are ${name}, a specialist focused on ${skill.promptFocus}. Work clearly, communicate progress, and match the existing project style.`,
+    shortBio: skill.shortBio,
+    systemPrompt: [
+      `You are ${name}, a ${skill.label.toLowerCase()} teammate.`,
+      `You specialize in ${skill.promptFocus}.`,
+      "Work like a senior member of the team: read context first, explain important tradeoffs, and produce focused, reviewable changes.",
+    ].join("\n"),
   };
 }
 
@@ -76,8 +102,9 @@ export function loadCustomCharacters(): Character[] {
   try {
     const raw = window.localStorage.getItem(CUSTOM_CHARACTER_STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isCharacter) : [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isCharacter);
   } catch {
     return [];
   }
@@ -90,7 +117,7 @@ export function saveCustomCharacters(characters: Character[]) {
 
 function isCharacter(value: unknown): value is Character {
   if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<Record<keyof Character, unknown>>;
+  const candidate = value as Partial<Character>;
   return (
     typeof candidate.id === "string" &&
     typeof candidate.name === "string" &&

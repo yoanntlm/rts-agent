@@ -1,13 +1,15 @@
-// Agent runner — H3 stub.
+// Agent runner.
 //
-// Subscribes to unclaimed agents in Convex, claims them, and simulates progress
-// so the end-to-end loop is alive before pi/Daytona are wired in (H4).
+// Subscribes to unclaimed agents in Convex, claims them, and runs each one
+// through pi (see lib/pi-runner.ts). Translates pi events → Convex mutations
+// so the client UI sees status, progress, and transcript updates in real time.
 //
-// Replace `simulate` with a real pi instance + Daytona sandbox in H4.
+// H4: replace pi's local bash with a Daytona-backed bash tool (see pi-runner.ts).
 
 import "dotenv/config";
 import { ConvexClient } from "convex/browser";
-import { api } from "@convex/_generated/api";
+import { api } from "@convex/_generated/api.js";
+import { runAgent } from "./lib/pi-runner.js";
 
 const CONVEX_URL = process.env.CONVEX_URL;
 if (!CONVEX_URL) {
@@ -30,96 +32,16 @@ client.onUpdate(api.agents.listUnclaimed, {}, async (agents: any[]) => {
       continue;
     }
     console.log(`[runner] claimed ${agent.name} (${agent._id}) — task: ${agent.task}`);
-    simulate(agent).catch((err) => {
-      console.error(`[runner] error simulating ${agent._id}:`, err);
-      claimed.delete(agent._id);
-    });
+    runAgent(client, agent)
+      .catch((err) => {
+        console.error(`[runner] error running ${agent._id}:`, err);
+      })
+      .finally(() => {
+        claimed.delete(agent._id);
+        console.log(`[runner] released ${agent.name} (${agent._id})`);
+      });
   }
 });
-
-// Fake progress loop. Replace with: spawn Daytona sandbox + run pi agent against task.
-async function simulate(agent: { _id: string; name: string; task: string }) {
-  await client.mutation(api.transcript.append, {
-    agentId: agent._id,
-    role: "system",
-    text: `Spawned. Task: ${agent.task}`,
-  });
-
-  await client.mutation(api.agents.update, {
-    agentId: agent._id,
-    status: "working",
-    progress: 0,
-  });
-
-  const STEPS = 8;
-  for (let i = 1; i <= STEPS; i++) {
-    await sleep(1500 + Math.random() * 1000);
-    const progress = i / STEPS;
-    await client.mutation(api.agents.update, {
-      agentId: agent._id,
-      progress,
-      lastMessage: `step ${i}/${STEPS}`,
-    });
-    await client.mutation(api.transcript.append, {
-      agentId: agent._id,
-      role: "agent",
-      text: `(simulated) made progress on step ${i}/${STEPS}`,
-    });
-
-    // Pretend to get stuck around step 5.
-    if (i === 5) {
-      await client.mutation(api.agents.update, {
-        agentId: agent._id,
-        status: "stuck",
-      });
-      await client.mutation(api.transcript.append, {
-        agentId: agent._id,
-        role: "agent",
-        text: "I'm not sure how to proceed — could you give me a hint?",
-      });
-      await waitForUserMessage(agent._id);
-      await client.mutation(api.agents.update, {
-        agentId: agent._id,
-        status: "working",
-      });
-      await client.mutation(api.transcript.append, {
-        agentId: agent._id,
-        role: "agent",
-        text: "Thanks! Continuing.",
-      });
-    }
-  }
-
-  await client.mutation(api.agents.update, {
-    agentId: agent._id,
-    status: "done",
-    progress: 1,
-    lastMessage: "Done!",
-  });
-  await client.mutation(api.transcript.append, {
-    agentId: agent._id,
-    role: "system",
-    text: "Task complete (simulated).",
-  });
-}
-
-// Polls undelivered user turns and resolves when at least one arrives.
-async function waitForUserMessage(agentId: string): Promise<void> {
-  while (true) {
-    await sleep(1000);
-    const pending = await client.query(api.transcript.undeliveredUserTurns, { agentId });
-    if (pending && pending.length > 0) {
-      for (const entry of pending) {
-        await client.mutation(api.transcript.markDelivered, { entryId: entry._id });
-      }
-      return;
-    }
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 process.on("SIGINT", () => {
   console.log("\n[runner] shutting down");

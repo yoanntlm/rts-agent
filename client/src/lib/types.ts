@@ -13,6 +13,7 @@ export type AgentView = {
   task: string;
   progress?: number;
   lastMessage?: string;
+  runnerSpawnedAt?: number;
 };
 
 export type RoomMap = { width: number; height: number };

@@ -9,8 +9,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "allowJs": true,
-    "types": ["node"]
+    "allowJs": true
   },
   "include": ["./**/*"],
   "exclude": ["./_generated/**"]

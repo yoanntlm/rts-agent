@@ -35,7 +35,8 @@ UI.md
 pnpm install
 
 # 2. Provision Convex (one time — interactive, creates a dev deployment under your account)
-cd convex && npx convex dev
+#    Run from the REPO ROOT, not from /convex. Convex looks for convex/ as a subdir.
+npx convex dev
 # Follow the prompts. When it says "deployment ready", note the URL it prints.
 # It also writes a CONVEX_URL line — copy that into client/.env.local and agent-runner/.env.
 # Leave `npx convex dev` running in this terminal — it watches the schema/functions.
