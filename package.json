@@ -1,0 +1,16 @@
+{
+  "name": "rts-agent",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./client\" --filter \"./agent-runner\" dev",
+    "dev:client": "pnpm --filter ./client dev",
+    "dev:runner": "pnpm --filter ./agent-runner dev",
+    "convex:dev": "cd convex && npx convex dev",
+    "build": "pnpm --filter ./client build",
+    "assets:gen": "pnpm --filter ./assets-gen start"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

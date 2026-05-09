@@ -22,43 +22,54 @@ Built for a 1-day hackathon.
 /convex          Schema + queries + mutations (Convex convention)
 /agent-runner    Node process: pi instances + Daytona sandboxes; writes to Convex
 /assets-gen      One-shot script for GPT-image-2 generation
+/characters      Preset character definitions (.md, frontmatter + system prompt body)
 ARCHITECTURE.md
 PLAN.md
+UI.md
 ```
 
 ## Quick start
 
 ```bash
-# install
+# 1. Install (one time)
 pnpm install
 
-# Convex (interactive once, creates dev deployment)
-npx convex dev          # in /convex — leaves a CONVEX_URL in client/.env.local
+# 2. Provision Convex (one time — interactive, creates a dev deployment under your account)
+cd convex && npx convex dev
+# Follow the prompts. When it says "deployment ready", note the URL it prints.
+# It also writes a CONVEX_URL line — copy that into client/.env.local and agent-runner/.env.
+# Leave `npx convex dev` running in this terminal — it watches the schema/functions.
 
-# dev
-pnpm --filter client dev          # Vite dev server
-pnpm --filter agent-runner dev    # Node watcher
+# 3. In a second terminal: client
+cp client/.env.local.example client/.env.local   # then paste VITE_CONVEX_URL=<from step 2>
+pnpm dev:client                                   # opens http://localhost:5173
+
+# 4. In a third terminal: agent runner (fake-progress simulator until H4)
+cp agent-runner/.env.example agent-runner/.env    # paste CONVEX_URL=<from step 2>
+pnpm dev:runner
 ```
 
-Env vars:
+You can run the client BEFORE step 2 — it renders the layout in preview mode with a setup banner. Spawning an agent requires steps 2–4.
+
+### Env vars (cheat sheet)
 
 ```
-# client/.env.local                (written by `npx convex dev`)
-VITE_CONVEX_URL=https://...
+client/.env.local
+  VITE_CONVEX_URL=https://...
 
-# agent-runner/.env
-CONVEX_URL=https://...
-CONVEX_DEPLOY_KEY=...   # for the Node SDK to write
-OPENAI_API_KEY=...      # GPT-5.5 (agents)
-DAYTONA_API_KEY=...
+agent-runner/.env
+  CONVEX_URL=https://...
+  # H4: OPENAI_API_KEY, DAYTONA_API_KEY
 
-# assets-gen/.env
-OPENAI_API_KEY=...      # GPT-image-2
+assets-gen/.env
+  OPENAI_API_KEY=...      # GPT-image-2
 ```
 
-> `pi` is an in-process package on the agent runner — no separate API key. Convex schema-generated TS types are auto-shared between `client` and `agent-runner`, so there's no `/shared` folder.
+> `pi` is an in-process package on the agent runner — no separate API key.
+> Convex auto-generates TS types in `convex/_generated/`; both `client` and `agent-runner` import them via the `@convex/*` path alias. The committed files in `_generated/` are placeholders that work for builds before `npx convex dev` runs — Convex overwrites them on first run.
 
 ## Docs
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — components, data flow, Convex schema
 - [PLAN.md](./PLAN.md) — hackathon hour-by-hour plan
+- [UI.md](./UI.md) — UI layout, character roster, drag-to-spawn workflow, visual states
