@@ -1,15 +1,23 @@
-// PLACEHOLDER — overwritten by `npx convex dev` (run from /convex/).
-const placeholderError = () => {
-  throw new Error(
-    "Convex API not generated yet. Run `npx convex dev` from /convex/ to create a deployment and generate the API.",
-  );
-};
-const proxy = new Proxy(
-  {},
-  {
-    get: () =>
-      new Proxy({}, { get: () => placeholderError }),
-  },
-);
-export const api = proxy;
-export const internal = proxy;
+/* eslint-disable */
+/**
+ * Generated `api` utility.
+ *
+ * THIS CODE IS AUTOMATICALLY GENERATED.
+ *
+ * To regenerate, run `npx convex dev`.
+ * @module
+ */
+
+import { anyApi, componentsGeneric } from "convex/server";
+
+/**
+ * A utility for referencing Convex functions in your app's API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
+export const api = anyApi;
+export const internal = anyApi;
+export const components = componentsGeneric();

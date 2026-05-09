@@ -187,3 +187,7 @@ Keep `transcript` as its own table (not a field on `agents`) — Convex queries 
 - Pathfinding (agents teleport or use straight-line tween)
 - Mobile layout
 - Multi-runner orchestration (the schema supports it, but we won't deploy it)
+
+j97dfh2fbae2aw95dst9wc6hdd86c7db
+jh7c2rd7d5r4x1s0dmfj7shn9186cg8f
+j570ker1sfwyhm66jkzxzpa8hh86deyp

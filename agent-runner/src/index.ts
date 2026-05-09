@@ -7,7 +7,7 @@
 
 import "dotenv/config";
 import { ConvexClient } from "convex/browser";
-import { api } from "@convex/_generated/api";
+import { api } from "@convex/_generated/api.js";
 
 const CONVEX_URL = process.env.CONVEX_URL;
 if (!CONVEX_URL) {
