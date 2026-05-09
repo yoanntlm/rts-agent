@@ -10,6 +10,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
       "@convex": path.resolve(__dirname, "../convex"),
       "@characters": path.resolve(__dirname, "../characters"),
+      convex: path.resolve(__dirname, "./node_modules/convex"),
     },
   },
   server: {

@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      convex:
+        specifier: ^1.17.0
+        version: 1.38.0(react@18.3.1)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
