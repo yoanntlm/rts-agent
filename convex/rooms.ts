@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-const DEFAULT_MAP = { width: 28, height: 20 };
+const DEFAULT_MAP = { width: 48, height: 32 };
 
 export const getOrCreate = mutation({
   args: { name: v.string() },
@@ -11,10 +11,11 @@ export const getOrCreate = mutation({
       .withIndex("by_name", (q) => q.eq("name", name))
       .unique();
     if (existing) {
-      // Keep the shared hackathon demo room aligned with the client grid size.
+      // Auto-align every room with the current default grid so all users see
+      // the same world (matches the bundled /assets/tilemap-48x32.json).
       if (
-        name === "demo" &&
-        (existing.map.width !== DEFAULT_MAP.width || existing.map.height !== DEFAULT_MAP.height)
+        existing.map.width !== DEFAULT_MAP.width ||
+        existing.map.height !== DEFAULT_MAP.height
       ) {
         await ctx.db.patch(existing._id, { map: DEFAULT_MAP });
       }

@@ -5,7 +5,29 @@ import {
   useTileTextures,
   type TileKind,
 } from "../../lib/tiles";
-import { loadFromStorage } from "../../lib/savedMap";
+import { isSavedMap, loadFromStorage, type SavedMap } from "../../lib/savedMap";
+
+// Bundled tilemap shipped with the client. Loaded once and shared across all
+// Tilemap instances so every user sees the same world by default.
+const BUNDLED_TILEMAP_URL = "/assets/tilemap-48x32.json";
+let bundledTilemapCache: SavedMap | null = null;
+let bundledTilemapPromise: Promise<SavedMap | null> | null = null;
+
+function loadBundledTilemap(): Promise<SavedMap | null> {
+  if (bundledTilemapCache) return Promise.resolve(bundledTilemapCache);
+  if (bundledTilemapPromise) return bundledTilemapPromise;
+  bundledTilemapPromise = fetch(BUNDLED_TILEMAP_URL)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (isSavedMap(data)) {
+        bundledTilemapCache = data;
+        return data;
+      }
+      return null;
+    })
+    .catch(() => null);
+  return bundledTilemapPromise;
+}
 
 type Props = {
   width: number;
@@ -36,14 +58,28 @@ function sectorDividers(width: number, height: number) {
 }
 
 export default function Tilemap({ width, height, tiles: explicit }: Props) {
+  const [bundled, setBundled] = useState<SavedMap | null>(bundledTilemapCache);
+  useEffect(() => {
+    if (bundledTilemapCache) return;
+    let cancelled = false;
+    loadBundledTilemap().then((data) => {
+      if (!cancelled && data) setBundled(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fallback chain: explicit prop > localStorage (editor saves) > bundled
+  // /assets/tilemap-48x32.json > procedural. Each step is gated on dimension
+  // match so we never render a misaligned grid.
   const tiles = useMemo<TileKind[]>(() => {
     if (explicit && explicit.length === width * height) return explicit;
     const saved = loadFromStorage();
-    if (saved && saved.width === width && saved.height === height) {
-      return saved.tiles;
-    }
+    if (saved && saved.width === width && saved.height === height) return saved.tiles;
+    if (bundled && bundled.width === width && bundled.height === height) return bundled.tiles;
     return buildProceduralTiles(width, height);
-  }, [width, height, explicit]);
+  }, [width, height, explicit, bundled]);
 
   const textures = useTileTextures();
   const sectors = useMemo(() => sectorDividers(width, height), [width, height]);

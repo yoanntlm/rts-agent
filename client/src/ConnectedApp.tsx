@@ -15,7 +15,7 @@ import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
 import type { Character } from "./lib/characters";
 
-const MAP_SIZE = { width: 28, height: 20 };
+const MAP_SIZE = { width: 48, height: 32 };
 
 type Props = { roomName: string };
 
