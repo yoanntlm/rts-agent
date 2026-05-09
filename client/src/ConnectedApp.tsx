@@ -7,14 +7,20 @@ import Roster from "./components/Roster";
 import World from "./components/World";
 import Inspector from "./components/Inspector";
 import SpawnModal from "./components/SpawnModal";
+import CreateAvatarModal from "./components/CreateAvatarModal";
 import { CHARACTERS, getCharacter } from "./lib/characters";
 import { getOrCreateIdentity } from "./lib/identity";
+import { loadCustomCharacters, saveCustomCharacters } from "./lib/customCharacters";
 import type { AgentView } from "./lib/types";
+import type { Character } from "./lib/characters";
 
 const ROOM_NAME = "demo";
+const MAP_SIZE = { width: 28, height: 20 };
 
 export default function ConnectedApp() {
   const identity = useMemo(() => getOrCreateIdentity(), []);
+  const [customCharacters, setCustomCharacters] = useState<Character[]>(() => loadCustomCharacters());
+  const characters = useMemo(() => [...CHARACTERS, ...customCharacters], [customCharacters]);
 
   const getOrCreateRoom = useMutation(api.rooms.getOrCreate);
   const joinRoom = useMutation(api.users.join);
@@ -56,6 +62,7 @@ export default function ConnectedApp() {
     | undefined;
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
   const transcript = useQuery(
     api.transcript.byAgent,
     selectedAgentId ? { agentId: selectedAgentId } : "skip",
@@ -67,19 +74,22 @@ export default function ConnectedApp() {
 
   const handleSpawn = async (task: string, name?: string) => {
     if (!roomId || !userId || !spawnCharacterId) return;
-    const character = getCharacter(spawnCharacterId);
+    const character = characters.find((c) => c.id === spawnCharacterId) ?? getCharacter(spawnCharacterId);
     if (!character) return;
-    await spawnAgent({
+    const agentId = (await spawnAgent({
       roomId,
       ownerUserId: userId,
       characterId: character.id,
       name: name?.trim() || character.name,
       sprite: character.icon,
       color: character.color,
-      // Random-ish drop point; in H6 this becomes the user's drop tile.
-      position: { x: Math.floor(Math.random() * 18) + 1, y: Math.floor(Math.random() * 12) + 1 },
+      position: {
+        x: Math.floor(Math.random() * (MAP_SIZE.width - 2)) + 1,
+        y: Math.floor(Math.random() * (MAP_SIZE.height - 2)) + 1,
+      },
       task,
-    });
+    })) as string;
+    setSelectedAgentId(agentId);
     setSpawnCharacterId(null);
   };
 
@@ -90,22 +100,33 @@ export default function ConnectedApp() {
 
   const selectedAgent = agents?.find((a) => a._id === selectedAgentId) ?? null;
 
+  const addCustomCharacter = (character: Character) => {
+    setCustomCharacters((current) => {
+      const next = [...current, character];
+      saveCustomCharacters(next);
+      return next;
+    });
+    setSpawnCharacterId(character.id);
+    setShowAvatarCreator(false);
+  };
+
   return (
     <>
       <Layout
         topBar={<TopBar roomName={ROOM_NAME} users={usersInRoom ?? []} selfUserId={userId} />}
         roster={
           <Roster
-            characters={CHARACTERS}
+            characters={characters}
             selectedCharacterId={spawnCharacterId}
             onSelect={(id) => setSpawnCharacterId(id)}
+            onCreateAvatar={() => setShowAvatarCreator(true)}
             disabled={!roomId || !userId}
           />
         }
         world={
           <World
             agents={(agents ?? []).map(toAgentView)}
-            mapSize={{ width: 20, height: 14 }}
+            mapSize={MAP_SIZE}
             onSelectAgent={setSelectedAgentId}
             selectedAgentId={selectedAgentId}
           />
@@ -125,9 +146,15 @@ export default function ConnectedApp() {
       />
       {spawnCharacterId && (
         <SpawnModal
-          character={getCharacter(spawnCharacterId)!}
+          character={characters.find((c) => c.id === spawnCharacterId) ?? getCharacter(spawnCharacterId)!}
           onClose={() => setSpawnCharacterId(null)}
           onSubmit={handleSpawn}
+        />
+      )}
+      {showAvatarCreator && (
+        <CreateAvatarModal
+          onClose={() => setShowAvatarCreator(false)}
+          onCreate={addCustomCharacter}
         />
       )}
     </>

@@ -1,15 +1,6 @@
-// PLACEHOLDER — overwritten by `npx convex dev` (run from /convex/).
-const placeholderError = () => {
-  throw new Error(
-    "Convex API not generated yet. Run `npx convex dev` from /convex/ to create a deployment and generate the API.",
-  );
-};
-const proxy = new Proxy(
-  {},
-  {
-    get: () =>
-      new Proxy({}, { get: () => placeholderError }),
-  },
-);
-export const api = proxy;
-export const internal = proxy;
+// Runtime-safe fallback for development before full Convex codegen has run.
+// `convex codegen` will replace this with a typed API surface.
+import { anyApi } from "convex/server";
+
+export const api = anyApi;
+export const internal = anyApi;
