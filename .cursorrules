@@ -1,0 +1,22 @@
+You are working on rts-agent, a multiplayer agent orchestration platform with an RTS-style top-down view.
+
+STACK: React 18 + Vite + Three.js (R3F) + Tailwind v4 + Convex (reactive DB, no WebSocket). No custom WS code.
+
+READ THESE FILES FIRST on every task:
+- ARCHITECTURE.md — Convex schema, data flow, component responsibilities
+- UI.md — layout spec, visual states, workflows, animation budget
+- PLAN.md — hour-by-hour build order
+- client/src/lib/types.ts — AgentView, AgentStatus, RoomMap
+- client/src/lib/characters.ts — Character type, CHARACTERS array
+- convex/schema.ts — the DB schema (source of truth for all data shapes)
+
+I am Person 1 (Frontend). I own /client/**. My partner owns /convex/** and /agent-runner/**.
+
+DESIGN DIRECTION — this is critical:
+- Dark background (stone-950 base), rich saturated accent colors — NOT monochrome
+- Each agent character has a distinct color (teal, yellow, red, purple, green) — use these aggressively
+- Vibe: developer tool meets RTS game. Think Warp terminal + StarCraft command UI
+- Animations must feel premium, not childish. Smooth spring physics, subtle glows, clean easing
+- Use Tailwind v4 classes. No CSS modules. Font is system sans-serif
+- R3F for the game world, HTML/Tailwind for all HUD panels
+- Convex for all data: useQuery for reads, useMutation for writes. No local mock data.

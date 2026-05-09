@@ -7,14 +7,22 @@ import Roster from "./components/Roster";
 import World from "./components/World";
 import Inspector from "./components/Inspector";
 import SpawnModal from "./components/SpawnModal";
+import CreateAvatarModal from "./components/CreateAvatarModal";
 import { CHARACTERS, getCharacter } from "./lib/characters";
+import {
+  loadCustomCharacters,
+  saveCustomCharacters,
+} from "./lib/customCharacters";
 import { getOrCreateIdentity } from "./lib/identity";
 import type { AgentView } from "./lib/types";
+import type { Character } from "./lib/characters";
 
 const ROOM_NAME = "demo";
 
 export default function ConnectedApp() {
   const identity = useMemo(() => getOrCreateIdentity(), []);
+  const [customCharacters, setCustomCharacters] = useState<Character[]>(() => loadCustomCharacters());
+  const characters = useMemo(() => [...CHARACTERS, ...customCharacters], [customCharacters]);
 
   const getOrCreateRoom = useMutation(api.rooms.getOrCreate);
   const joinRoom = useMutation(api.users.join);
@@ -27,12 +35,17 @@ export default function ConnectedApp() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const r = await getOrCreateRoom({ name: ROOM_NAME });
-      if (cancelled) return;
-      setRoomId(r as string);
-      const u = await joinRoom({ roomId: r, name: identity.name, color: identity.color });
-      if (cancelled) return;
-      setUserId(u as string);
+      try {
+        const r = await getOrCreateRoom({ name: ROOM_NAME });
+        if (cancelled) return;
+        setRoomId(r as string);
+        const u = await joinRoom({ roomId: r, name: identity.name, color: identity.color });
+        if (cancelled) return;
+        setUserId(u as string);
+      } catch (err) {
+        if (cancelled) return;
+        setAppError(err instanceof Error ? err.message : "Failed to connect to Convex.");
+      }
     })();
     return () => {
       cancelled = true;
@@ -61,44 +74,139 @@ export default function ConnectedApp() {
     selectedAgentId ? { agentId: selectedAgentId } : "skip",
   ) as TranscriptRow[] | undefined;
 
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [spawnCharacterId, setSpawnCharacterId] = useState<string | null>(null);
+  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
+  const [spawnPosition, setSpawnPosition] = useState<{ x: number; y: number } | null>(null);
+  const [dragCharacterId, setDragCharacterId] = useState<string | null>(null);
+  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
+  const [isSpawning, setIsSpawning] = useState(false);
+  const [sendPending, setSendPending] = useState(false);
+  const [appError, setAppError] = useState<string | null>(null);
   const spawnAgent = useMutation(api.agents.spawn);
   const sendMessage = useMutation(api.transcript.userMessage);
 
   const handleSpawn = async (task: string, name?: string) => {
     if (!roomId || !userId || !spawnCharacterId) return;
-    const character = getCharacter(spawnCharacterId);
+    const character = characters.find((c) => c.id === spawnCharacterId) ?? getCharacter(spawnCharacterId);
     if (!character) return;
-    await spawnAgent({
-      roomId,
-      ownerUserId: userId,
-      characterId: character.id,
-      name: name?.trim() || character.name,
-      sprite: character.icon,
-      color: character.color,
-      // Random-ish drop point; in H6 this becomes the user's drop tile.
-      position: { x: Math.floor(Math.random() * 18) + 1, y: Math.floor(Math.random() * 12) + 1 },
-      task,
-    });
-    setSpawnCharacterId(null);
+    setIsSpawning(true);
+    setAppError(null);
+    try {
+      const agentId = (await spawnAgent({
+        roomId,
+        ownerUserId: userId,
+        characterId: character.id,
+        name: name?.trim() || character.name,
+        sprite: character.icon,
+        color: character.color,
+        position: spawnPosition ?? {
+          x: Math.floor(Math.random() * (20 - 2)) + 1,
+          y: Math.floor(Math.random() * (14 - 2)) + 1,
+        },
+        task,
+      })) as string;
+      setSelectedAgentId(agentId);
+      setSelectedCharacterId(null);
+      setSpawnCharacterId(null);
+      setSpawnPosition(null);
+    } catch (err) {
+      setAppError(err instanceof Error ? err.message : "Failed to spawn agent.");
+    } finally {
+      setIsSpawning(false);
+    }
   };
 
   const handleSendMessage = async (text: string) => {
     if (!selectedAgentId || !userId || !text.trim()) return;
-    await sendMessage({ agentId: selectedAgentId, userId, text: text.trim() });
+    setSendPending(true);
+    setAppError(null);
+    try {
+      await sendMessage({ agentId: selectedAgentId, userId, text: text.trim() });
+    } catch (err) {
+      setAppError(err instanceof Error ? err.message : "Failed to send message.");
+    } finally {
+      setSendPending(false);
+    }
   };
 
   const selectedAgent = agents?.find((a) => a._id === selectedAgentId) ?? null;
+  const dragCharacter = dragCharacterId ? characters.find((c) => c.id === dragCharacterId) : null;
+
+  const addCustomCharacter = (character: Character) => {
+    setCustomCharacters((current) => {
+      const next = [...current, character];
+      saveCustomCharacters(next);
+      return next;
+    });
+    setSelectedCharacterId(character.id);
+    setShowAvatarCreator(false);
+  };
+
+  useEffect(() => {
+    if (!dragCharacterId) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      setDragPoint({ x: event.clientX, y: event.clientY });
+    };
+    const onPointerUp = () => {
+      setDragCharacterId(null);
+      setDragPoint(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDragCharacterId(null);
+        setDragPoint(null);
+      }
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [dragCharacterId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !spawnCharacterId) {
+        setSelectedAgentId(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [spawnCharacterId]);
 
   return (
     <>
       <Layout
-        topBar={<TopBar roomName={ROOM_NAME} users={usersInRoom ?? []} selfUserId={userId} />}
+        topBar={
+          <TopBar
+            roomName={ROOM_NAME}
+            users={usersInRoom ?? []}
+            selfUserId={userId}
+            connectionStatus={roomId ? "connected" : "reconnecting"}
+          />
+        }
         roster={
           <Roster
-            characters={CHARACTERS}
-            selectedCharacterId={spawnCharacterId}
-            onSelect={(id) => setSpawnCharacterId(id)}
+            characters={characters}
+            selectedCharacterId={selectedCharacterId}
+            onSelect={setSelectedCharacterId}
+            onDescribeTask={() => {
+              if (selectedCharacterId) {
+                setSpawnPosition(null);
+                setSpawnCharacterId(selectedCharacterId);
+              }
+            }}
+            onBeginDrag={(id) => {
+              setSelectedCharacterId(id);
+              setDragCharacterId(id);
+            }}
+            onCreateAvatar={() => setShowAvatarCreator(true)}
             disabled={!roomId || !userId}
           />
         }
@@ -108,6 +216,14 @@ export default function ConnectedApp() {
             mapSize={{ width: 20, height: 14 }}
             onSelectAgent={setSelectedAgentId}
             selectedAgentId={selectedAgentId}
+            placementColor={dragCharacter?.color ?? null}
+            onPlaceAgent={(position) => {
+              if (!dragCharacterId) return;
+              setSpawnPosition(position);
+              setSpawnCharacterId(dragCharacterId);
+              setDragCharacterId(null);
+              setDragPoint(null);
+            }}
           />
         }
         inspector={
@@ -120,15 +236,47 @@ export default function ConnectedApp() {
               userId: t.userId ?? null,
             }))}
             onSendMessage={handleSendMessage}
+            sendPending={sendPending}
           />
+        }
+        banner={
+          appError ? (
+            <div className="max-w-md rounded-lg border border-red-700/50 bg-red-950/80 p-3 text-xs text-red-100 backdrop-blur">
+              <div className="font-semibold text-red-200">Frontend action failed</div>
+              <p className="mt-1 leading-relaxed text-red-100/80">{appError}</p>
+            </div>
+          ) : undefined
         }
       />
       {spawnCharacterId && (
         <SpawnModal
-          character={getCharacter(spawnCharacterId)!}
-          onClose={() => setSpawnCharacterId(null)}
+          character={characters.find((c) => c.id === spawnCharacterId)!}
+          onClose={() => {
+            setSpawnCharacterId(null);
+            setSpawnPosition(null);
+          }}
           onSubmit={handleSpawn}
+          isSubmitting={isSpawning}
         />
+      )}
+      {showAvatarCreator && (
+        <CreateAvatarModal
+          onClose={() => setShowAvatarCreator(false)}
+          onCreate={addCustomCharacter}
+        />
+      )}
+      {dragCharacter && dragPoint && (
+        <div
+          className="pointer-events-none fixed z-50 flex h-12 w-12 items-center justify-center rounded-lg text-sm font-black text-stone-950 opacity-80 shadow-2xl"
+          style={{
+            left: dragPoint.x + 14,
+            top: dragPoint.y + 14,
+            background: `linear-gradient(180deg, ${dragCharacter.color}, color-mix(in srgb, ${dragCharacter.color} 60%, #0c0a09))`,
+            boxShadow: `0 0 24px ${dragCharacter.color}55`,
+          }}
+        >
+          {dragCharacter.name.slice(0, 2).toUpperCase()}
+        </div>
       )}
     </>
   );
@@ -146,6 +294,7 @@ type AgentRow = {
   task: string;
   progress?: number;
   lastMessage?: string;
+  runnerSpawnedAt?: number;
 };
 
 type TranscriptRow = {
@@ -172,5 +321,6 @@ function toAgentView(a: AgentRow): AgentView {
     task: a.task,
     progress: a.progress,
     lastMessage: a.lastMessage,
+    runnerSpawnedAt: a.runnerSpawnedAt,
   };
 }
